@@ -1,0 +1,591 @@
+
+<!DOCTYPE html
+  PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+   <!--
+This HTML was auto-generated from MATLAB code.
+To make changes, update the MATLAB code and republish this document.
+      --><title>ADAPTIVE OPTICS MODELING WITH OOMAO</title><meta name="generator" content="MATLAB 8.5"><link rel="schema.DC" href="http://purl.org/dc/elements/1.1/"><meta name="DC.date" content="2015-12-17"><meta name="DC.source" content="adaptiveOpticsHowto.m"><style type="text/css">
+html,body,div,span,applet,object,iframe,h1,h2,h3,h4,h5,h6,p,blockquote,pre,a,abbr,acronym,address,big,cite,code,del,dfn,em,font,img,ins,kbd,q,s,samp,small,strike,strong,sub,sup,tt,var,b,u,i,center,dl,dt,dd,ol,ul,li,fieldset,form,label,legend,table,caption,tbody,tfoot,thead,tr,th,td{margin:0;padding:0;border:0;outline:0;font-size:100%;vertical-align:baseline;background:transparent}body{line-height:1}ol,ul{list-style:none}blockquote,q{quotes:none}blockquote:before,blockquote:after,q:before,q:after{content:'';content:none}:focus{outine:0}ins{text-decoration:none}del{text-decoration:line-through}table{border-collapse:collapse;border-spacing:0}
+
+html { min-height:100%; margin-bottom:1px; }
+html body { height:100%; margin:0px; font-family:Arial, Helvetica, sans-serif; font-size:10px; color:#000; line-height:140%; background:#fff none; overflow-y:scroll; }
+html body td { vertical-align:top; text-align:left; }
+
+h1 { padding:0px; margin:0px 0px 25px; font-family:Arial, Helvetica, sans-serif; font-size:1.5em; color:#d55000; line-height:100%; font-weight:normal; }
+h2 { padding:0px; margin:0px 0px 8px; font-family:Arial, Helvetica, sans-serif; font-size:1.2em; color:#000; font-weight:bold; line-height:140%; border-bottom:1px solid #d6d4d4; display:block; }
+h3 { padding:0px; margin:0px 0px 5px; font-family:Arial, Helvetica, sans-serif; font-size:1.1em; color:#000; font-weight:bold; line-height:140%; }
+
+a { color:#005fce; text-decoration:none; }
+a:hover { color:#005fce; text-decoration:underline; }
+a:visited { color:#004aa0; text-decoration:none; }
+
+p { padding:0px; margin:0px 0px 20px; }
+img { padding:0px; margin:0px 0px 20px; border:none; }
+p img, pre img, tt img, li img, h1 img, h2 img { margin-bottom:0px; } 
+
+ul { padding:0px; margin:0px 0px 20px 23px; list-style:square; }
+ul li { padding:0px; margin:0px 0px 7px 0px; }
+ul li ul { padding:5px 0px 0px; margin:0px 0px 7px 23px; }
+ul li ol li { list-style:decimal; }
+ol { padding:0px; margin:0px 0px 20px 0px; list-style:decimal; }
+ol li { padding:0px; margin:0px 0px 7px 23px; list-style-type:decimal; }
+ol li ol { padding:5px 0px 0px; margin:0px 0px 7px 0px; }
+ol li ol li { list-style-type:lower-alpha; }
+ol li ul { padding-top:7px; }
+ol li ul li { list-style:square; }
+
+.content { font-size:1.2em; line-height:140%; padding: 20px; }
+
+pre, code { font-size:12px; }
+tt { font-size: 1.2em; }
+pre { margin:0px 0px 20px; }
+pre.codeinput { padding:10px; border:1px solid #d3d3d3; background:#f7f7f7; }
+pre.codeoutput { padding:10px 11px; margin:0px 0px 20px; color:#4c4c4c; }
+pre.error { color:red; }
+
+@media print { pre.codeinput, pre.codeoutput { word-wrap:break-word; width:100%; } }
+
+span.keyword { color:#0000FF }
+span.comment { color:#228B22 }
+span.string { color:#A020F0 }
+span.untermstring { color:#B20000 }
+span.syscmd { color:#B28C00 }
+
+.footer { width:auto; padding:10px 0px; margin:25px 0px 0px; border-top:1px dotted #878787; font-size:0.8em; line-height:140%; font-style:italic; color:#878787; text-align:left; float:none; }
+.footer p { margin:0px; }
+.footer a { color:#878787; }
+.footer a:hover { color:#878787; text-decoration:underline; }
+.footer a:visited { color:#878787; }
+
+table th { padding:7px 5px; text-align:left; vertical-align:middle; border: 1px solid #d6d4d4; font-weight:bold; }
+table td { padding:7px 5px; text-align:left; vertical-align:top; border:1px solid #d6d4d4; }
+
+
+
+
+
+  </style></head><body><div class="content"><h1>ADAPTIVE OPTICS MODELING WITH OOMAO</h1><!--introduction--><p>Demonstrate how to build a simple closed-loop single conjugated adaptive optics system</p><!--/introduction--><h2>Contents</h2><div><ul><li><a href="#1">New section with equations</a></li><li><a href="#3">Definition of the atmosphere</a></li><li><a href="#4">Definition of the telescope</a></li><li><a href="#5">Definition of a calibration source</a></li><li><a href="#6">Definition of the wavefront sensor</a></li><li><a href="#12">Definition of the deformable mirror</a></li><li><a href="#15">Interaction matrix: DM/WFS calibration</a></li><li><a href="#16">The closed loop</a></li><li><a href="#26">WFS noise</a></li></ul></div><h2>New section with equations<a name="1"></a></h2><pre class="codeinput"><span class="comment">% This is my equation</span>
+</pre><p><img src="adaptiveOpticsHowto_eq15760909332280076727.png" alt="$$\int_0^1 x dx$$"></p><pre class="codeinput"><span class="comment">% This is the code to produce it</span>
+a=2;
+<span class="comment">%this is the output</span>
+a
+</pre><h2>Definition of the atmosphere<a name="3"></a></h2><pre class="codeinput"><span class="comment">% The atmosphere class constructor has 2 required input:</span>
+<span class="comment">%</span>
+<span class="comment">% * the wavelength [m]</span>
+<span class="comment">% * the Fried parameter for the previously given wavelength [m]</span>
+<span class="comment">%</span>
+<span class="comment">% 1 optionnal input: [m]</span>
+<span class="comment">%</span>
+<span class="comment">% * the outer scale</span>
+<span class="comment">%</span>
+<span class="comment">% and  parameter/value pairs of optional inputs:</span>
+<span class="comment">%</span>
+<span class="comment">% * the altitudes of the turbulence layers  [m]</span>
+<span class="comment">% * the fractionnal r0 which is the ratio of the r0 at altitude h on the</span>
+<span class="comment">% integrated r0: $(r_0(h)/r_0)^{5/3}$</span>
+<span class="comment">% * the wind speeds  [m/s]</span>
+<span class="comment">% * the wind directions [rd]</span>
+<span class="comment">%</span>
+<span class="comment">% In the following the atmosphere is given for a r0=15cm in V band and an</span>
+<span class="comment">% outer scale of 30m with 3 turbulence layers.</span>
+atm = atmosphere(photometry.V,0.15,30,<span class="keyword">...</span>
+    <span class="string">'altitude'</span>,[0,4,10]*1e3,<span class="keyword">...</span>
+    <span class="string">'fractionnalR0'</span>,[0.7,0.25,0.05],<span class="keyword">...</span>
+    <span class="string">'windSpeed'</span>,[5,10,20],<span class="keyword">...</span>
+    <span class="string">'windDirection'</span>,[0,pi/3.,pi]);
+</pre><h2>Definition of the telescope<a name="4"></a></h2><p>The telescope class constructor has 1 required input:</p><div><ul><li>the telescope diameter [m]</li></ul></div><p>1 optionnal input:</p><div><ul><li>the central obscuration ratio</li></ul></div><p>and  parameter/value pairs of optional inputs:</p><div><ul><li>the field of view either in arcminute or arcsecond</li><li>the pupil sampling or resolution in pixels</li><li>the atmopheric layer motion sampling time [s]</li></ul></div><pre class="codeinput">nPx = 60;
+tel = telescope(3.6,<span class="keyword">...</span>
+    <span class="string">'fieldOfViewInArcMin'</span>,2.5,<span class="keyword">...</span>
+    <span class="string">'resolution'</span>,nPx,<span class="keyword">...</span>
+    <span class="string">'samplingTime'</span>,1/100);
+</pre><h2>Definition of a calibration source<a name="5"></a></h2><p>The source class constructor has parameters/value pairs of optional inputs:</p><div><ul><li>the zenith angle [rd] (default: 0rd)</li><li>the azimuth angle [rd] (default: 0rd)</li><li>the wavelength [m] (default: V band)</li><li>the magnitude</li></ul></div><p>In the following, an on-axis natural guide star in V band is defined.</p><pre class="codeinput">ngs = source(<span class="string">'wavelength'</span>,photometry.R);
+</pre><h2>Definition of the wavefront sensor<a name="6"></a></h2><p>Up to now, only the Shack--Hartmann WFS has been implemented in OOMAO. The shackHartmann class constructor has 2 required inputs:</p><div><ul><li>the number of lenslet on one side of the square lenslet array</li><li>the resolution of the camera</li></ul></div><p>and  1 optionnal input:</p><div><ul><li>the minimum light ratio that is the ratio between a partially illuminated subaperture and a fully illuminated aperture</li></ul></div><pre class="codeinput">nLenslet = 10;
+wfs = shackHartmann(nLenslet,nPx,0.75);
+<span class="comment">%wfs = pyramid(nLenslet,nPx,'modulation',6);</span>
+</pre><p>Propagation of the calibration source to the WFS through the telescope</p><pre class="codeinput">ngs = ngs.*tel*wfs;
+</pre><p>Selecting the subapertures illuminated at 75% or more with respect to a fully illuminated subaperture setValidLenslet(wfs) %% % A new frame read-out and slopes computing: +wfs; %% % Setting the reference slopes to the current slopes that corresponds to a % flat wavefront wfs.referenceSlopes = wfs.slopes;</p><pre class="codeinput">wfs.INIT
+</pre><p>A new frame read-out and slopes computing:</p><pre class="codeinput">+wfs;
+</pre><p>The WFS camera display:</p><pre class="codeinput">figure
+subplot(1,2,1)
+imagesc(wfs.camera)
+</pre><p>The WFS slopes display:</p><pre class="codeinput">subplot(1,2,2)
+slopesDisplay(wfs)
+</pre><h2>Definition of the deformable mirror<a name="12"></a></h2><p>The influence functions are made of two cubic Bezier curves. This parametric influence function allows modeling a large range of influence function types. As examples two influence functions are pre--defined, the "monotonic" and "overshoot" models. The second parameter is the mechanical coupling between two adjacent actuators</p><pre class="codeinput">bif = influenceFunction(<span class="string">'monotonic'</span>,50/100);
+</pre><p>Cut of the influence function</p><pre class="codeinput">figure
+show(bif)
+</pre><p>The deformableMirror constructor class has 1 required input:</p><div><ul><li>the number of actuator on one side of the square array of actuators</li></ul></div><p>and  parameter/value pairs of optional inputs:</p><div><ul><li>the influence function object (modes)</li><li>the influence function resolution in pixels</li><li>the map of valid actuator</li></ul></div><p>Here, the actuators to lenslets registration obeys Fried geometry so the map of valid actuator in the square can be retrieved from the WFS object</p><pre class="codeinput">nActuator = nLenslet + 1;
+dm = deformableMirror(nActuator,<span class="keyword">...</span>
+    <span class="string">'modes'</span>,bif,<span class="keyword">...</span>
+    <span class="string">'resolution'</span>,nPx,<span class="keyword">...</span>
+    <span class="string">'validActuator'</span>,wfs.validActuator);
+</pre><h2>Interaction matrix: DM/WFS calibration<a name="15"></a></h2><pre class="codeinput">ngs=ngs.*tel;
+dmCalib = calibration(dm,wfs,ngs,ngs.wavelength/40);
+<span class="comment">% The influence functions are normalized to 1, the actuator are then</span>
+<span class="comment">% controlled in stroke in meter, here we choose a half a wavelength stroke.</span>
+<span class="comment">% stroke = ngs.wavelength/2;</span>
+<span class="comment">% %%</span>
+<span class="comment">% % The DM actuator commands or coefficients is set to an identity matrix</span>
+<span class="comment">% % scaled to the required stroke; each column of the matrix is one set of</span>
+<span class="comment">% % actuator coefficients (commands)</span>
+<span class="comment">% dm.coefs = eye(dm.nValidActuator)*stroke;</span>
+<span class="comment">% %%</span>
+<span class="comment">% % Propagation of the source through the telescope and the DM to the WFS</span>
+<span class="comment">% ngs=ngs.*tel*dm*wfs;</span>
+<span class="comment">% %%</span>
+<span class="comment">% % The source has been propagated through the DM as many times as the number</span>
+<span class="comment">% % of column in the DM coefficients matrix. As a result, the slopes in the</span>
+<span class="comment">% % WFs object is also a matrix, each column correspond to one actuactor. The</span>
+<span class="comment">% % interaction matrix is then easily derived from the slopes:</span>
+<span class="comment">% interactionMatrix = wfs.slopes./stroke;</span>
+<span class="comment">% figure(10)</span>
+<span class="comment">% subplot(1,2,1)</span>
+<span class="comment">% imagesc(interactionMatrix)</span>
+<span class="comment">% xlabel('DM actuators')</span>
+<span class="comment">% ylabel('WFS slopes')</span>
+<span class="comment">% ylabel(colorbar,'slopes/actuator stroke')</span>
+<span class="comment">%</span>
+<span class="comment">%</span>
+<span class="comment">% %% Command matrix derivation</span>
+<span class="comment">% % The command matrix is obtained by computing first the singular value</span>
+<span class="comment">% % decomposition of the interaction matrix,</span>
+<span class="comment">% [U,S,V] = svd(interactionMatrix);</span>
+<span class="comment">% eigenValues = diag(S);</span>
+<span class="comment">% subplot(1,2,2)</span>
+<span class="comment">% semilogy(eigenValues,'.')</span>
+<span class="comment">% xlabel('Eigen modes')</span>
+<span class="comment">% ylabel('Eigen values')</span>
+<span class="comment">% %%</span>
+<span class="comment">% % the 4 last eigen values are filtered out</span>
+<span class="comment">% nThresholded = 4;</span>
+<span class="comment">% iS = diag(1./eigenValues(1:end-nThresholded));</span>
+<span class="comment">% [nS,nC] = size(interactionMatrix);</span>
+<span class="comment">% iS(nC,nS) = 0;</span>
+<span class="comment">% %%</span>
+<span class="comment">% % and then the command matrix is derived.</span>
+<span class="comment">% commandMatrix = V*iS*U';</span>
+dmCalib.nThresholded = 5;
+commandMatrix = dmCalib.M;
+</pre><h2>The closed loop<a name="16"></a></h2><p>Combining the atmosphere and the telescope</p><pre class="codeinput">tel = tel+atm;
+figure
+imagesc(tel)
+</pre><p>Resetting the DM command</p><pre class="codeinput">dm.coefs = 0;
+</pre><p>Propagation throught the atmosphere to the telescope</p><pre class="codeinput">ngs=ngs.*tel;
+</pre><p>Saving the turbulence aberrated phase</p><pre class="codeinput">turbPhase = ngs.meanRmPhase;
+</pre><p>Propagation to the WFS</p><pre class="codeinput">ngs=ngs*dm*wfs;
+</pre><p>Display of turbulence and residual phase</p><pre class="codeinput">figure(11)
+h = imagesc([turbPhase dm.surface ngs.meanRmPhase]);
+axis <span class="string">equal</span> <span class="string">tight</span>
+colorbar
+snapnow
+</pre><p>Closed loop integrator gain:</p><pre class="codeinput">loopGain = 0.5;
+</pre><p>closing the loop</p><pre class="codeinput">nIteration = 200;
+total  = zeros(1,nIteration);
+residue = zeros(1,nIteration);
+tic
+<span class="keyword">for</span> kIteration=1:nIteration
+    <span class="comment">% Propagation throught the atmosphere to the telescope, +tel means that</span>
+    <span class="comment">% all the layers move of one step based on the sampling time and the</span>
+    <span class="comment">% wind vectors of the layers</span>
+    ngs=ngs.*+tel;
+    <span class="comment">% Saving the turbulence aberrated phase</span>
+    turbPhase = ngs.meanRmPhase;
+    <span class="comment">% Variance of the atmospheric wavefront</span>
+    total(kIteration) = var(ngs);
+    <span class="comment">% Propagation to the WFS</span>
+    ngs=ngs*dm*wfs;
+    <span class="comment">% Variance of the residual wavefront</span>
+    residue(kIteration) = var(ngs);
+    <span class="comment">% Computing the DM residual coefficients</span>
+    residualDmCoefs = commandMatrix*wfs.slopes;
+    <span class="comment">% Integrating the DM coefficients</span>
+    dm.coefs = dm.coefs - loopGain*residualDmCoefs;
+    <span class="comment">% Display of turbulence and residual phase</span>
+    set(h,<span class="string">'Cdata'</span>,[turbPhase,ngs.meanRmPhase])
+    drawnow
+<span class="keyword">end</span>
+toc
+snapnow
+u = (0:nIteration-1).*tel.samplingTime;
+atm.wavelength = ngs.wavelength;
+</pre><p>Piston removed phase variance</p><pre class="codeinput">totalTheory = phaseStats.zernikeResidualVariance(1,atm,tel);
+atm.wavelength = photometry.V;
+</pre><p>Phase variance to micron rms converter</p><pre class="codeinput">rmsMicron = @(x) 1e6*sqrt(x).*ngs.wavelength/2/pi;
+figure(12)
+plot(u,rmsMicron(total),u([1,end]),rmsMicron(totalTheory)*ones(1,2),u,rmsMicron(residue))
+grid
+legend(<span class="string">'Full'</span>,<span class="string">'Full (theory)'</span>,<span class="string">'Residue'</span>,0)
+xlabel(<span class="string">'Time [s]'</span>)
+ylabel(<span class="string">'Wavefront rms [\mum]'</span>)
+</pre><h2>WFS noise<a name="26"></a></h2><p>Noise can be added to the wavefront sensor but first we need to set the star magnitude.</p><pre class="codeinput">ngs.magnitude = 10;
+</pre><p>It can be useful to know the number of photon per subaperture. To do so, let separate the atmosphere from the telescope</p><pre class="codeinput">tel = tel - atm;
+</pre><p>re-propagate the source,</p><pre class="codeinput">ngs = ngs.*tel*wfs;
+</pre><p>and display the subaperture intensity</p><pre class="codeinput">figure
+intensityDisplay(wfs)
+</pre><p>Now the readout noise in photo-electron per pixel per frame rms is set</p><pre class="codeinput">wfs.camera.readOutNoise = 5;
+</pre><p>Photon-noise is enabled.</p><pre class="codeinput">wfs.camera.photonNoise = true;
+</pre><p>A pixel threshold is defined</p><pre class="codeinput">wfs.framePixelThreshold = 5;
+</pre><p>The loop is closed again</p><pre class="codeinput">nIteration = 200;
+total  = zeros(1,nIteration);
+residue = zeros(1,nIteration);
+dm.coefs = 0;
+tel = tel + atm;
+<span class="keyword">for</span> kIteration=1:nIteration
+    <span class="comment">% Propagation throught the atmosphere to the telescope, +tel means that</span>
+    <span class="comment">% all the layers move of one step based on the sampling time and the</span>
+    <span class="comment">% wind vectors of the layers</span>
+    ngs=ngs.*+tel;
+    <span class="comment">% Saving the turbulence aberrated phase</span>
+    turbPhase = ngs.meanRmOpd;
+    <span class="comment">% Variance of the atmospheric wavefront</span>
+    total(kIteration) = var(ngs);
+    <span class="comment">% Propagation to the WFS</span>
+    ngs=ngs*dm*wfs;
+    <span class="comment">% Variance of the residual wavefront</span>
+    residue(kIteration) = var(ngs);
+    <span class="comment">% Computing the DM residual coefficients</span>
+    residualDmCoefs = commandMatrix*wfs.slopes;
+    <span class="comment">% Integrating the DM coefficients</span>
+    dm.coefs = dm.coefs - loopGain*residualDmCoefs;
+    <span class="comment">% Display of turbulence and residual phase</span>
+    set(h,<span class="string">'Cdata'</span>,[turbPhase,2*dm.surface.*tel.pupil,ngs.meanRmOpd])
+    drawnow
+<span class="keyword">end</span>
+</pre><p>Updating the display</p><pre class="codeinput">set(0,<span class="string">'CurrentFigure'</span>,12)
+hold <span class="string">on</span>
+plot(u,rmsMicron(total),<span class="string">'b--'</span>,u,rmsMicron(residue),<span class="string">'r--'</span>)
+legend(<span class="string">'Full'</span>,<span class="string">'Full (theory)'</span>,<span class="string">'Residue'</span>,<span class="string">'Full (noise)'</span>,<span class="string">'Residue (noise)'</span>,0)
+</pre><p class="footer"><br><a href="http://www.mathworks.com/products/matlab/">Published with MATLAB&reg; R2015a</a><br></p></div><!--
+##### SOURCE BEGIN #####
+%% ADAPTIVE OPTICS MODELING WITH OOMAO
+% Demonstrate how to build a simple closed-loop single conjugated adaptive
+% optics system
+
+
+%% New section with equations
+
+% This is my equation
+%%
+% 
+% $$\int_0^1 x dx$$
+% 
+
+% This is the code to produce it
+a=2;
+%this is the output
+a
+
+%% Definition of the atmosphere 
+
+
+% The atmosphere class constructor has 2 required input:
+% 
+% * the wavelength [m]
+% * the Fried parameter for the previously given wavelength [m]
+%
+% 1 optionnal input: [m]
+%
+% * the outer scale
+%
+% and  parameter/value pairs of optional inputs:
+%
+% * the altitudes of the turbulence layers  [m]
+% * the fractionnal r0 which is the ratio of the r0 at altitude h on the
+% integrated r0: $(r_0(h)/r_0)^{5/3}$
+% * the wind speeds  [m/s]
+% * the wind directions [rd]
+%
+% In the following the atmosphere is given for a r0=15cm in V band and an
+% outer scale of 30m with 3 turbulence layers.
+atm = atmosphere(photometry.V,0.15,30,...
+    'altitude',[0,4,10]*1e3,...
+    'fractionnalR0',[0.7,0.25,0.05],...
+    'windSpeed',[5,10,20],...
+    'windDirection',[0,pi/3.,pi]);
+
+%% Definition of the telescope
+% The telescope class constructor has 1 required input:
+%
+% * the telescope diameter [m]
+%
+% 1 optionnal input:
+%
+% * the central obscuration ratio
+%
+% and  parameter/value pairs of optional inputs:
+%
+% * the field of view either in arcminute or arcsecond
+% * the pupil sampling or resolution in pixels
+% * the atmopheric layer motion sampling time [s]
+nPx = 60;
+tel = telescope(3.6,...
+    'fieldOfViewInArcMin',2.5,...
+    'resolution',nPx,...
+    'samplingTime',1/100);
+
+%% Definition of a calibration source
+% The source class constructor has parameters/value pairs of optional inputs:
+%
+% * the zenith angle [rd] (default: 0rd)
+% * the azimuth angle [rd] (default: 0rd)
+% * the wavelength [m] (default: V band)
+% * the magnitude
+%
+% In the following, an on-axis natural guide star in V band is defined.
+ngs = source('wavelength',photometry.R);
+
+%% Definition of the wavefront sensor
+% Up to now, only the ShackREPLACE_WITH_DASH_DASHHartmann WFS has been implemented in OOMAO.
+% The shackHartmann class constructor has 2 required inputs:
+%
+% * the number of lenslet on one side of the square lenslet array
+% * the resolution of the camera
+%
+% and  1 optionnal input:
+%
+% * the minimum light ratio that is the ratio between a partially
+% illuminated subaperture and a fully illuminated aperture
+nLenslet = 10;
+wfs = shackHartmann(nLenslet,nPx,0.75);
+%wfs = pyramid(nLenslet,nPx,'modulation',6);
+%%
+% Propagation of the calibration source to the WFS through the telescope
+ngs = ngs.*tel*wfs;
+%%
+% Selecting the subapertures illuminated at 75% or more with respect to a
+% fully illuminated subaperture
+% setValidLenslet(wfs)
+% %%
+% % A new frame read-out and slopes computing:
+% +wfs;
+% %%
+% % Setting the reference slopes to the current slopes that corresponds to a
+% % flat wavefront
+% wfs.referenceSlopes = wfs.slopes;
+wfs.INIT
+%%
+% A new frame read-out and slopes computing:
++wfs;
+%%
+% The WFS camera display:
+figure
+subplot(1,2,1)
+imagesc(wfs.camera)
+%%
+% The WFS slopes display:
+subplot(1,2,2)
+slopesDisplay(wfs)
+
+%% Definition of the deformable mirror
+% The influence functions are made of two cubic Bezier curves. This
+% parametric influence function allows modeling a large range of influence
+% function types. As examples two influence functions are preREPLACE_WITH_DASH_DASHdefined, the
+% "monotonic" and "overshoot" models. The second parameter is the
+% mechanical coupling between two adjacent actuators
+bif = influenceFunction('monotonic',50/100);
+%%
+% Cut of the influence function
+figure
+show(bif)
+%%
+% The deformableMirror constructor class has 1 required input:
+%
+% * the number of actuator on one side of the square array of actuators
+%
+% and  parameter/value pairs of optional inputs:
+% 
+% * the influence function object (modes)
+% * the influence function resolution in pixels
+% * the map of valid actuator
+%
+% Here, the actuators to lenslets registration obeys Fried geometry so the
+% map of valid actuator in the square can be retrieved from the WFS object
+nActuator = nLenslet + 1;
+dm = deformableMirror(nActuator,...
+    'modes',bif,...
+    'resolution',nPx,...
+    'validActuator',wfs.validActuator);
+
+
+%% Interaction matrix: DM/WFS calibration
+ngs=ngs.*tel;
+dmCalib = calibration(dm,wfs,ngs,ngs.wavelength/40);
+% The influence functions are normalized to 1, the actuator are then
+% controlled in stroke in meter, here we choose a half a wavelength stroke.
+% stroke = ngs.wavelength/2;
+% %%
+% % The DM actuator commands or coefficients is set to an identity matrix
+% % scaled to the required stroke; each column of the matrix is one set of
+% % actuator coefficients (commands)
+% dm.coefs = eye(dm.nValidActuator)*stroke;
+% %%
+% % Propagation of the source through the telescope and the DM to the WFS
+% ngs=ngs.*tel*dm*wfs;
+% %%
+% % The source has been propagated through the DM as many times as the number
+% % of column in the DM coefficients matrix. As a result, the slopes in the
+% % WFs object is also a matrix, each column correspond to one actuactor. The
+% % interaction matrix is then easily derived from the slopes:
+% interactionMatrix = wfs.slopes./stroke;
+% figure(10)
+% subplot(1,2,1)
+% imagesc(interactionMatrix)
+% xlabel('DM actuators')
+% ylabel('WFS slopes')
+% ylabel(colorbar,'slopes/actuator stroke')
+% 
+% 
+% %% Command matrix derivation
+% % The command matrix is obtained by computing first the singular value
+% % decomposition of the interaction matrix,
+% [U,S,V] = svd(interactionMatrix);
+% eigenValues = diag(S);
+% subplot(1,2,2)
+% semilogy(eigenValues,'.')
+% xlabel('Eigen modes')
+% ylabel('Eigen values')
+% %%
+% % the 4 last eigen values are filtered out
+% nThresholded = 4;
+% iS = diag(1./eigenValues(1:end-nThresholded));
+% [nS,nC] = size(interactionMatrix);
+% iS(nC,nS) = 0;
+% %%
+% % and then the command matrix is derived.
+% commandMatrix = V*iS*U';
+dmCalib.nThresholded = 5;
+commandMatrix = dmCalib.M;
+%% The closed loop
+% Combining the atmosphere and the telescope
+tel = tel+atm;
+figure
+imagesc(tel)
+%%
+% Resetting the DM command
+dm.coefs = 0;
+%%
+% Propagation throught the atmosphere to the telescope
+ngs=ngs.*tel;
+%%
+% Saving the turbulence aberrated phase
+turbPhase = ngs.meanRmPhase;
+%%
+% Propagation to the WFS
+ngs=ngs*dm*wfs;
+%%
+% Display of turbulence and residual phase
+figure(11)
+h = imagesc([turbPhase dm.surface ngs.meanRmPhase]);
+axis equal tight
+colorbar
+snapnow
+%%
+% Closed loop integrator gain:
+loopGain = 0.5;
+%%
+% closing the loop
+nIteration = 200;
+total  = zeros(1,nIteration);
+residue = zeros(1,nIteration);
+tic
+for kIteration=1:nIteration
+    % Propagation throught the atmosphere to the telescope, +tel means that
+    % all the layers move of one step based on the sampling time and the
+    % wind vectors of the layers
+    ngs=ngs.*+tel; 
+    % Saving the turbulence aberrated phase
+    turbPhase = ngs.meanRmPhase;
+    % Variance of the atmospheric wavefront
+    total(kIteration) = var(ngs);
+    % Propagation to the WFS
+    ngs=ngs*dm*wfs; 
+    % Variance of the residual wavefront
+    residue(kIteration) = var(ngs);
+    % Computing the DM residual coefficients
+    residualDmCoefs = commandMatrix*wfs.slopes;
+    % Integrating the DM coefficients
+    dm.coefs = dm.coefs - loopGain*residualDmCoefs;
+    % Display of turbulence and residual phase
+    set(h,'Cdata',[turbPhase,ngs.meanRmPhase])
+    drawnow
+end
+toc
+snapnow
+u = (0:nIteration-1).*tel.samplingTime;
+atm.wavelength = ngs.wavelength;
+%%
+% Piston removed phase variance
+totalTheory = phaseStats.zernikeResidualVariance(1,atm,tel);
+atm.wavelength = photometry.V;
+%%
+% Phase variance to micron rms converter 
+rmsMicron = @(x) 1e6*sqrt(x).*ngs.wavelength/2/pi;
+figure(12)
+plot(u,rmsMicron(total),u([1,end]),rmsMicron(totalTheory)*ones(1,2),u,rmsMicron(residue))
+grid
+legend('Full','Full (theory)','Residue',0)
+xlabel('Time [s]')
+ylabel('Wavefront rms [\mum]')
+
+%% WFS noise
+% Noise can be added to the wavefront sensor but first we need to set the
+% star magnitude.
+ngs.magnitude = 10;
+%%
+% It can be useful to know the number of photon per subaperture. To do so,
+% let separate the atmosphere from the telescope
+tel = tel - atm;
+%%
+% re-propagate the source,
+ngs = ngs.*tel*wfs;
+%%
+% and display the subaperture intensity
+figure
+intensityDisplay(wfs)
+%%
+% Now the readout noise in photo-electron per pixel per frame rms is set
+wfs.camera.readOutNoise = 5;
+%% 
+% Photon-noise is enabled.
+wfs.camera.photonNoise = true;
+%%
+% A pixel threshold is defined
+wfs.framePixelThreshold = 5;
+%%
+% The loop is closed again
+nIteration = 200;
+total  = zeros(1,nIteration);
+residue = zeros(1,nIteration);
+dm.coefs = 0;
+tel = tel + atm;
+for kIteration=1:nIteration
+    % Propagation throught the atmosphere to the telescope, +tel means that
+    % all the layers move of one step based on the sampling time and the
+    % wind vectors of the layers
+    ngs=ngs.*+tel; 
+    % Saving the turbulence aberrated phase
+    turbPhase = ngs.meanRmOpd;
+    % Variance of the atmospheric wavefront
+    total(kIteration) = var(ngs);
+    % Propagation to the WFS
+    ngs=ngs*dm*wfs; 
+    % Variance of the residual wavefront
+    residue(kIteration) = var(ngs);
+    % Computing the DM residual coefficients
+    residualDmCoefs = commandMatrix*wfs.slopes;
+    % Integrating the DM coefficients
+    dm.coefs = dm.coefs - loopGain*residualDmCoefs;
+    % Display of turbulence and residual phase
+    set(h,'Cdata',[turbPhase,2*dm.surface.*tel.pupil,ngs.meanRmOpd])
+    drawnow
+end
+%%
+% Updating the display
+set(0,'CurrentFigure',12)
+hold on
+plot(u,rmsMicron(total),'bREPLACE_WITH_DASH_DASH',u,rmsMicron(residue),'rREPLACE_WITH_DASH_DASH')
+legend('Full','Full (theory)','Residue','Full (noise)','Residue (noise)',0)
+
+##### SOURCE END #####
+--></body></html>
