@@ -429,8 +429,8 @@ classdef atmosphere < hgsetget
             out = 1.4.*obj.r0.^(-5/6).*out;
         end
         
-        function out = fourierPhaseScreen(atm,D,nPixel,nMap)
-            %% FOURIERPHASESCREEN Phase screen computation
+        function out = fourierPhaseScreen(atm,D,nPixel,nMap,nLenslet)
+                        %% FOURIERPHASESCREEN Phase screen computation
             %
             % map = fourierPhaseScreen(atm,D,nPixel) Computes a square
             % phase screen of D meter and sampled with nPixel using the
@@ -440,12 +440,27 @@ classdef atmosphere < hgsetget
             % of atm.layer.D meter and sampled with atm.layer.nPixel using
             % the Fourier method; atm must contain only one turbulent
             % layer!
-            %
+            % 
+            % CB edit 29/04/2015
+            %--------------------------------------------------------------
+            % Added in additional functionality to produce 3 different
+            % phase screens (per nMap), 1 the full phase screen including
+            % frequencies up to the Nyquist frequency as defined by
+            % nPixel/2D, 2 a low order phase map including only those
+            % frequencies up to nLenslet/2D (i.e. the Nyquist frequency of
+            % the wavefront sensor) and 3 a high order phase map including
+            % spatial frequencies beteen nLenslet/2D and nPixel/2D.
+            % The output of the function is an nPixel x nPixel x nMap x 3
+            % matrix, where out(:,:,:,1) is the total phase screen,
+            % including all spatial frequencies. out(:,:,:,2) is the low
+            % order phase screens, and out(:,:,:,3) is the high order.
+            %--------------------------------------------------------------
             % See also atmosphere
             
             %             warning('oomao:atmosphere:fourierPhaseScreen',...
             %                 'The fourierPhaseScreen seems to have a bug, to use with care!')
             
+            % CB edit: nMap is now the 5th parameter (nLenslet is the 4th)
             if nargin<4
                 nMap = 1;
             end
@@ -456,15 +471,39 @@ classdef atmosphere < hgsetget
             
             N = 4*nPixel;
             L = (N-1)*D/(nPixel-1);
+            
             [fx,fy]  = freqspace(N,'meshgrid');
             [~,fr]  = cart2pol(fx,fy);
             fr  = fftshift(fr.*(N-1)/L./2);
-            clear fx fy fo
+            
+            % sqrt(psd) of full phase screen
             psdRoot = sqrt(phaseStats.spectrum(fr,atm)); % Phase FT magnitude
+            [idx] = find(fr==0);
+            psdRoot(idx) = 0;
+            
+            % CB edit 29/04/2015
+            %--------------------------------------------------------------
+            % Calculate low order cut-off frequency as defined by
+            % the lenslet spacing
+            if exist('nLenslet')==1
+                d = D/nLenslet;
+                fLO = 1/(2*d);
+                % Low order spectrum
+                idx = find(abs(fftshift(fx)).*(N-1)/L./2>fLO);
+                jdx = find(abs(fftshift(fy)).*(N-1)/L./2>fLO);
+                psdRoot_LO = psdRoot;
+                psdRoot_LO(idx) = 0;
+                psdRoot_LO(jdx) = 0;
+                % High order spectrum
+                psdRoot_HO = psdRoot - psdRoot_LO;
+            end
+            %--------------------------------------------------------------
+            
             %             figure
             %             imagesc(map)
             %             axis square
             %             colorbar
+            clear fx fy fo
             clear fr
             fourierSampling = 1./L;
             %                         % -- Checking the variances --
@@ -475,11 +514,30 @@ classdef atmosphere < hgsetget
             %                         disp(['Info.: Numerical variance  :',num2str(numericalVar,'%3.3f'),'rd^2'])
             %                         % -------------------------------
             u = 1:nPixel;
-            out = zeros(nPixel,nPixel,nMap);
+            
+            if exist('nLenslet')==1
+                out = zeros(nPixel,nPixel,nMap,3);
+            else
+                out = zeros(nPixel,nPixel,nMap);
+            end
+            
             for kMap=1:nMap
-                map = psdRoot.*fft2(randn(atm.rngStream,N))./N; % White noise filtering
+                WNF = fft2(randn(atm.rngStream,N))./N; % White noise filtering
+                map = psdRoot.*WNF;
                 map = real(ifft2(map).*fourierSampling).*N.^2;
-                out(:,:,kMap) = map(u,u);
+                out(:,:,kMap,1) = map(u,u);
+                % CB edit 29/04/2015
+                %----------------------------------------------------------
+                if exist('nLenslet')==1
+                    mapLO = psdRoot_LO.*WNF; % White noise filtering
+                    mapLO = real(ifft2(mapLO).*fourierSampling).*N.^2;
+                    mapHO = psdRoot_HO.*WNF; % White noise filtering
+                    mapHO = real(ifft2(mapHO).*fourierSampling).*N.^2;
+                
+                    out(:,:,kMap,2) = mapLO(u,u);
+                    out(:,:,kMap,3) = mapHO(u,u);
+                end
+                %----------------------------------------------------------
             end
         end
         function out = fourierPhaseScreenStraight(atm,D,nPixel)
