@@ -337,6 +337,12 @@ classdef telescopeAbstract < handle
 %                                                             fprintf(' ------>      : expanding!\n')
                                 % 1 pixel around phase increase
                                 Z = obj.atm.layer(kLayer).phase(obj.innerMask{kLayer}(2:end-1,2:end-1));
+                                %xShift = u - step(1);
+                                %yShift = u - step(2);
+                                %[xi,yi] = meshgrid(xShift,yShift);
+                                %obj.mapShift{kLayer} = interp2(x0,y0,obj.mapShift{kLayer},xi,yi,'cubic');
+                                
+                                %Z = obj.mapShift{kLayer}(obj.innerMask{kLayer}(2:end-1,2:end-1));
                                 X = obj.A{kLayer}*Z + obj.B{kLayer}*randn(obj.atm.rngStream,size(obj.B{kLayer},2),1);
                                 obj.mapShift{kLayer}(obj.outerMask{kLayer})  = X;
                                 obj.mapShift{kLayer}(~obj.outerMask{kLayer}) = obj.atm.layer(kLayer).phase(:);
@@ -351,8 +357,8 @@ classdef telescopeAbstract < handle
                             [xi,yi] = meshgrid(xShift,yShift);
                             %obj.atm.layer(kLayer).phase ...
                             %    = spline2({u0,u0},obj.mapShift{kLayer},{yShift,xShift});
-                            obj.atm.layer(kLayer).phase = linear(x0,y0,obj.mapShift{kLayer},xi,yi); %%
-                %obj.atm.layer(kLayer).phase = interp2(x0,y0,obj.mapShift{kLayer},xi,yi,'linear');
+                            %obj.atm.layer(kLayer).phase = linear(x0,y0,obj.mapShift{kLayer},xi,yi); %%
+                            obj.atm.layer(kLayer).phase = interp2(x0,y0,obj.mapShift{kLayer},xi,yi,'cubic');
 
 % [FX,FY] = gradient(obj.mapShift{kLayer},pixelLength);
 % buf = obj.mapShift{kLayer} - step(1)*FX - step(2)*FY;
@@ -899,7 +905,7 @@ classdef telescopeAbstract < handle
                             obj.count(kLayer) = 0;
                             obj.mapShift{kLayer} = zeros(nPixel+2);
                             pixelStep = [obj.windVx obj.windVy].*obj.samplingTime*(nPixel-1)/D_m;
-                            obj.nShift(kLayer) = max(floor(min(1./pixelStep)),1);
+                            obj.nShift(kLayer) = max(floor(min(1./abs(pixelStep))),1);
                             u = (0:nPixel+1).*D_m./(nPixel-1);
                             %                 [u,v] = meshgrid(u);
                             obj.x{kLayer} = u;

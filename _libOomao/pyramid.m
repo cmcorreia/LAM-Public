@@ -34,6 +34,10 @@ classdef pyramid < handle
         wave;                       % incoming wave, a square complex matrix
         validSlopes;                % logical insindex indicating the validSlopes
         validIntensityPupil;        % logical index indicating the validIntensityPupil
+        validLenslet;               % logical index coresponding to valid pixel points but 
+                                    % over dimensions of nLensletxnLenslet
+                                    % (for compatability with shackHartmann
+                                    % functions)
         pyrMask;                    % pyramid face transmitance and phase
         slopesUnits=1;              % normalisation factor to have the 1-to-1 gain btw input and output
     end
@@ -151,6 +155,25 @@ classdef pyramid < handle
                 pwfs.validIntensityPupil = logical(pwfs.validIntensityPupil - centralHole);
             end
         end
+        
+        %% Get and Set validLenslet
+        function setValidLenslet(pwfs)
+           
+            % Sets indices validLenslet for compatibility with other
+            % functions for shackHartmann etc.  This gives the valid
+            % lenslet/pixel pupil over a grid of nLenslet X nLenslet
+            % dimensions.
+            pwfs.validLenslet = utilities.piston(pwfs.nLenslet/pwfs.p_binning,...
+                'type','logical','xOffset',0,'yOffset',0);
+            if pwfs.obstructionRatio
+                centralHole = utilities.piston(floor(pwfs.obstructionRatio*pwfs.nLenslet/pwfs.p_binning),...
+                    pwfs.nLenslet/pwfs.p_binning,'type','logical','xOffset',0,'yOffset',0)
+            else
+                centralHole = 0;
+            end
+            pwfs.validLenslet = logical(pwfs.validLenslet - centralHole);
+            
+        end
         %% Get and Set alpha
         function out = get.alpha(pwfs)
             out = pwfs.p_alpha;
@@ -170,6 +193,7 @@ classdef pyramid < handle
             pwfs.pxSide = pwfs.resolution*2*pwfs.p_c;
             makePyrMask(pwfs);
             setValidIntensityPupil(pwfs);
+            setValidLenslet(pwfs);
             pwfs.validSlopes = [pwfs.validIntensityPupil pwfs.validIntensityPupil];
         end
         
