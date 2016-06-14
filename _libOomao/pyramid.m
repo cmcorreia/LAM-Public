@@ -413,7 +413,7 @@ classdef pyramid < handle
                 setModulationData(pwfs,nWave)
             end
             
-            pwfs.q(pwfs.u,pwfs.u,:) = wave;
+            pwfs.q(pwfs.u,pwfs.u,:) = reshape(wave, n1,[],nWave);
             
             if pwfs.modulation>0
                 for kTheta = 1:pwfs.nTheta
