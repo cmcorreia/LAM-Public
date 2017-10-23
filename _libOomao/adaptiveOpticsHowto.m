@@ -74,8 +74,9 @@ ngs = source('wavelength',photometry.J);
 % * the minimum light ratio that is the ratio between a partially
 % illuminated subaperture and a fully illuminated aperture
 nLenslet = 10;
-%wfs = shackHartmann(nLenslet,nPx,0.75);
-wfs = pyramid(nLenslet,nPx,'modulation',0);
+
+wfs = shackHartmann(nLenslet,nPx,0.75);
+%wfs = pyramid(nLenslet,nPx,'modulation',0);
 
 %%
 % Propagation of the calibration source to the WFS through the telescope
