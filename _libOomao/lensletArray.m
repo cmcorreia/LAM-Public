@@ -43,6 +43,10 @@ classdef lensletArray < handle
         nyquistSampling;
         % the lenslet field of view given in diffraction fwhm units
         fieldStopSize;
+        % extra field of view given in diffraction fwhm units for elongated
+        % spots convolution. The sky-psf on the lenlslet focal plane is
+        % extended using zero-padding, which is an approximation
+        elongatedFieldStopSize;
     end
     
     properties (Dependent, SetAccess=private)
@@ -329,6 +333,22 @@ classdef lensletArray < handle
             end
             % Back to transpose 2D
             wavePrgted  = reshape(wavePrgted,nLensletsImagePx*nLensletArray,nLensletsImagePx).';
+            
+            % extend "artificially" the lenslet fieldStopSize
+            if ~isempty(elongatedFieldStopSize)
+                nPadPix = elongatedFieldStopSize/2*obj.lenslets.nyquistSampling*2;
+            end
+            
+            
+%             a = wavePrgted;
+%             b = reshape(a.',[],obj.nLensletWavePx,obj.nLenslet^2);
+%             nPadPix = 6;
+%             c = padarray(b,[nPadPix,nPadPix,0],0,'both');  
+%             d = reshape(c, obj.nLensletWavePx + 2*nPadPix, []);
+%             e = reshape(d,(obj.nLensletWavePx + 2*nPadPix)*obj.nLenslet, (obj.nLensletWavePx + 2*nPadPix)*obj.nLenslet);   
+            %wavePrgted = reshape(wavePrgted,obj.nLensletWavePx,obj.nLensletWavePx,[]);
+            %wavePrgted = padarray(wavePrgted,[nPadPix,nPadPix,0],0,'both');
+            
 %             wavePrgted = wavePrgted.*conj(wavePrgted);
             % and back to input wave array shape
             [n,m] = size(wavePrgted);
