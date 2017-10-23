@@ -276,7 +276,9 @@ classdef shackHartmann < hgsetget
             setValidLenslet(obj);
             obj.referenceSlopes = obj.slopes;
         end
-        
+        function lgsKernelInit
+            
+        end
         %         %% Get and Set slopes
         %         function slopes = get.slopes(obj)
         %             slopes = obj.p_slopes;
@@ -667,7 +669,11 @@ classdef shackHartmann < hgsetget
                 relay(obj.lenslets,src)
             end
             %             grabAndProcess(obj)
-            spotsSrcKernelConvolution(obj,src)
+            if length(src(1).height) == 1 % single altitude source
+                spotsSrcKernelConvolution(obj,src)
+            else % LGS with finite profile width
+                spotsLgsSrcKernelConvolution(obj,src)
+            end
             grab(obj.camera)
 
             if obj.camera.frameCount==0
@@ -713,6 +719,11 @@ classdef shackHartmann < hgsetget
             
         end
         
+        function spotsLgsSrcKernelConvolution(obj,src)
+            parfor kLenslet=1:size(buffer,3)
+                %buffer(:,:,kLenslet) = conv2(buffer(:,:,kLenslet),subapLgsKernel(:,:,kLenslet),'same');
+            end
+        end
         function out = framelets(obj,lensletI,lensletJ,lensletArrayK)
             %% FRAMELETS Per lenslet detector frame 
             %
