@@ -327,7 +327,7 @@ classdef phaseStats
             %
             % See also atmosphere
             
-            error(nargchk(2,3,nargin))
+            narginchk(2,3)
             rho1 = varargin{1}(:);
             if nargin==2
                 atm  = varargin{2};
