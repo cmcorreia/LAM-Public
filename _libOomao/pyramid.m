@@ -34,15 +34,18 @@ classdef pyramid < handle
         isInternalCalibrationPWFS;  % flag to indicate whether this is a temporary object for internal calibration only
         src;                        % source object for the calibration
         tel;                        % telescope object for the calibration
-        modulationCalibPwfs;        % modulation in lambda/D units for the internal pyramid WFS created only for choosing the valid pixels by applying a threshold (default 0.9) over the max intensity detected    
+        object;                     % concatenation of sources sampling a user-defined object
+        modulationCalibPwfs;        % modulation in lambda/D units for the internal pyramid WFS created only for choosing the valid pixels by applying a threshold (default 0.9) over the max intensity detected
         minLightRatio;              % the minimum amount of light per lenslet defined as a ratio to the maximum when a "large" modulation value is set
         tag = 'PYRAMID';            % tag
         slopesUnits=1;              % normalisation factor to have the 1-to-1 gain btw input and output
-        wvlRange=0;                 % vector of wavelenghts for broadband WFSensing in absolute or relative units 
+        wvlRange=0;                 % vector of wavelenghts for broadband WFSensing in absolute or relative units
         viewFocalPlane;             % Flag to view the psf at the focal plane of the Pyramid (will increase comutation time)
         flatField = 0;              % camera flat field
-        pixelGains = 1;             % camera pixel gains          
-end
+        pixelGains = 1;             % camera pixel gains
+        extendedObject = 0;         % flag for extended object
+        fftPhasor = 1;              % pre-computation of the fftPhasor for the extended object case
+    end
     properties(GetAccess = 'public', SetAccess = 'private')
         validActuator;              % map of validActuators [default at corners of sub-apertures]
         lightMap;                   % map of the light passed through the pyramid
@@ -55,7 +58,7 @@ end
         % (for compatability with shackHartmann
         % functions)
         pyrMask;                    % pyramid face transmitance and phase
-        fpIm;                       % image of the focal plane at the tip of the pyramid
+        fpIm = 0;                       % image of the focal plane at the tip of the pyramid
     end
     
     properties(SetAccess=private,SetObservable=true)
@@ -112,12 +115,14 @@ end
             addParameter(p,'modulationCalibPwfs',50,@isnumeric);
             addParameter(p,'wvlRange',0,@isnumeric);
             addParameter(p,'viewFocalPlane',0)
-            
+            addParameter(p,'object',source, @(x) isa(x,'source') );
+            addParameter(p,'extendedObject',0,@isnumeric);
             parse(p,nLenslet,resolution,varargin{:})
             
             pwfs.isInternalCalibrationPWFS= p.Results.isInternalCalibrationPWFS;
             pwfs.tel                    = p.Results.tel;
             pwfs.src                    = p.Results.src;
+            pwfs.object                 = p.Results.object;
             pwfs.modulationCalibPwfs    = p.Results.modulationCalibPwfs;
             pwfs.minLightRatio          = p.Results.minLightRatio;
             pwfs.nLenslet               = p.Results.nLenslet;
@@ -134,6 +139,19 @@ end
             pwfs.pupil                  = p.Results.pupil;
             pwfs.wvlRange               = p.Results.wvlRange;
             pwfs.viewFocalPlane         = p.Results.viewFocalPlane;
+            pwfs.extendedObject         = p.Results.extendedObject;
+            
+            if pwfs.extendedObject % CHECK for object size versus FOV on the pyramid
+                sizeObjectMax = max([pwfs.object.zenith]) * 2; % maximum size of object in radians on sky
+                fieldOfView   = size(pwfs.pyrMask, 1) * pwfs.src.wavelength / pwfs.tel.D / 2.; % FOV in the pyramid mask focal plane, assumed shannon sampling
+                if fieldOfView < sizeObjectMax
+                    disp('###########################################################################')
+                    disp('WARNING - EXTENDED OBJECT SIZE LARGER THAN FOV - CASE NOT HANDLED - STOPING')
+                    disp('###########################################################################')
+                    keyboard
+                end
+            end
+            
             
             if isempty(pwfs.pupil) && ~isempty(pwfs.tel)
                 pwfs.pupil = pwfs.tel.pupil;
@@ -182,13 +200,16 @@ end
             pwfs.q   = zeros(pwfs.pxSide,pwfs.pxSide,nWave);
             pwfs.I4Q4 = zeros(pwfs.pxSide,pwfs.pxSide,...
                 nWave,nTheta); %
+            if size(pwfs.object,2) > 1 && size(pwfs.fftPhasor, 3) ~= size(pwfs.object,2)  % user-defined object
+                makeFftPhasor(pwfs);
+            end
         end
         %% Get and Set validDetectorPixels
         function setvalidDetectorPixels(pwfs,val)
             if nargin == 2 % user custom value
                 pwfs.validDetectorPixels = logical(val);
                 pwfs.validSlopes = [pwfs.validDetectorPixels pwfs.validDetectorPixels];
-            else 
+            else
                 pwfs.validDetectorPixels = utilities.piston((pwfs.nLenslet)/pwfs.p_binning,...
                     pwfs.nLenslet*pwfs.c/pwfs.p_binning,'type','logical','xOffset',0,'yOffset',0);
                 if pwfs.obstructionRatio
@@ -206,7 +227,7 @@ end
                 pwfs_ = pyramid(pwfs.nLenslet,pwfs.resolution,'modulation',pwfs.modulationCalibPwfs,'alpha',pwfs.alpha,'c',pwfs.c,...
                     'isInternalCalibrationPWFS',1,...
                     'obstructionRatio',pwfs.obstructionRatio,...
-                    'binning',pwfs.p_binning);  
+                    'binning',pwfs.p_binning);
                 pwfs.src = pwfs.src .* pwfs.tel * pwfs_; % propagate through
                 figure
                 subplot(1,3,1)
@@ -250,12 +271,12 @@ end
                 pwfs.validLenslet = logical(pwfs.validLenslet - centralHole);
             end
             
-%             if ~pwfs.isInternalCalibrationPWFS && pwfs.tel.D > 0
-%                 
-%                 idx = round((pwfs.c-1)/2*pwfs.nLenslet)+1:round((pwfs.c-1)/2*pwfs.nLenslet)+pwfs.nLenslet;
-%                 pwfs.validLenslet = pwfs.validDetectorPixels(idx,idx);
-%                 
-%             end
+            %             if ~pwfs.isInternalCalibrationPWFS && pwfs.tel.D > 0
+            %
+            %                 idx = round((pwfs.c-1)/2*pwfs.nLenslet)+1:round((pwfs.c-1)/2*pwfs.nLenslet)+pwfs.nLenslet;
+            %                 pwfs.validLenslet = pwfs.validDetectorPixels(idx,idx);
+            %
+            %             end
             
         end
         %% Get and Set alpha
@@ -273,7 +294,13 @@ end
         end
         function set.c(pwfs,val)
             pwfs.p_c = val;
-            pwfs.u = 1+pwfs.resolution*(2*pwfs.c-1)/2:pwfs.resolution*(2*pwfs.c+1)/2;
+            if rem(pwfs.nLenslet*pwfs.c,1) > 0 % size in pixels is not an integer
+                fprintf('WARNING: Pupil separation changed from: %f, to: %f\n',pwfs.p_c,ceil(pwfs.nLenslet*pwfs.c)/pwfs.nLenslet)
+                pwfs.p_c = ceil(pwfs.nLenslet*pwfs.c)/pwfs.nLenslet;
+            end
+            %pwfs.u = fix(1+pwfs.resolution*(2*pwfs.c-1)/2:pwfs.resolution*(2*pwfs.c+1)/2);
+            pwfs.u = fix(2+pwfs.resolution*(2*pwfs.c-1)/2:pwfs.resolution*(2*pwfs.c+1)/2+1); % added one pixel shift to this index such that the intensities from the 4 quadrants when added together are symmetic!!! (14-Nov-2017)
+            
             pwfs.pxSide = pwfs.resolution*2*pwfs.p_c;
             makePyrMask(pwfs);
             setvalidDetectorPixels(pwfs);
@@ -313,28 +340,28 @@ end
             index = 1:2:nElements; % Actuator index
             val   = logical(validLensletActuator(index,index));
         end
-%         %% Get valid actuators
-%         function val = get.validActuatorOld(obj)
-%             nElements            = 2*obj.nLenslet+1; % Linear number of lenslet+actuator
-%             validLensletActuator = zeros(nElements);
-%             index                = 2:2:nElements; % Lenslet index
-%             idx0 = ceil(obj.nLenslet*(obj.c-1)/2);
-%             w = idx0+1:idx0+obj.nLenslet;
-%             validLensletActuator(index,index) = obj.validDetectorPixels(w,w);
-%             for xLenslet = index
-%                 for yLenslet = index
-%                     if validLensletActuator(xLenslet,yLenslet)==1
-%                         xActuatorIndice = [xLenslet-1,xLenslet-1,...
-%                             xLenslet+1,xLenslet+1];
-%                         yActuatorIndice = [yLenslet-1,yLenslet+1,...
-%                             yLenslet+1,yLenslet-1];
-%                         validLensletActuator(xActuatorIndice,yActuatorIndice) = 1;
-%                     end
-%                 end
-%             end
-%             index = 1:2:nElements; % Actuator index
-%             val   = logical(validLensletActuator(index,index));
-%         end
+        %         %% Get valid actuators
+        %         function val = get.validActuatorOld(obj)
+        %             nElements            = 2*obj.nLenslet+1; % Linear number of lenslet+actuator
+        %             validLensletActuator = zeros(nElements);
+        %             index                = 2:2:nElements; % Lenslet index
+        %             idx0 = ceil(obj.nLenslet*(obj.c-1)/2);
+        %             w = idx0+1:idx0+obj.nLenslet;
+        %             validLensletActuator(index,index) = obj.validDetectorPixels(w,w);
+        %             for xLenslet = index
+        %                 for yLenslet = index
+        %                     if validLensletActuator(xLenslet,yLenslet)==1
+        %                         xActuatorIndice = [xLenslet-1,xLenslet-1,...
+        %                             xLenslet+1,xLenslet+1];
+        %                         yActuatorIndice = [yLenslet-1,yLenslet+1,...
+        %                             yLenslet+1,yLenslet-1];
+        %                         validLensletActuator(xActuatorIndice,yActuatorIndice) = 1;
+        %                     end
+        %                 end
+        %             end
+        %             index = 1:2:nElements; % Actuator index
+        %             val   = logical(validLensletActuator(index,index));
+        %         end
         %% Set wvlRange
         function set.wvlRange(pwfs,val)
             pwfs.wvlRange = val;
@@ -347,7 +374,7 @@ end
         function relay(pwfs, src)% wfs=pyramid(nLenslet,nPx,'modulation',modul);
             %% RELAY pyramid to source relay
             wvl = [src.wavelength];
-            if  numel(unique(wvl)) > 1 && any(pwfs.wvlRange) == 0                
+            if  numel(unique(wvl)) > 1 && any(pwfs.wvlRange) == 0
                 if numel(unique(wvl)) > 1 %multi wavelength case
                     pwfs.wvlRange = wvl;
                 end
@@ -485,7 +512,7 @@ end
                 dSubap = pwfs.tel.D/pwfs.nLenslet;
             end
             pwfs.slopesUnits = 1; % reset gains
-
+            
             nPx = pwfs.resolution;
             %ngs = source('wavelength',photometry.R);
             ngs = pwfs.src;
@@ -497,7 +524,7 @@ end
             if ~isempty(pwfs.tel)
                 tel_ = pwfs.tel;
             else
-                tel_ = telescope(1, 'resolution',pwfs.resolution, 'obstructionRatio',pwfs.obstructionRatio);  
+                tel_ = telescope(1, 'resolution',pwfs.resolution, 'obstructionRatio',pwfs.obstructionRatio);
             end
             if ~isempty(pwfs.pupil)
                 tel_.pupil = pwfs.pupil;
@@ -556,6 +583,8 @@ end
             p = gcp('nocreate');
             [n1,n2,n3] = size(wave);
             nWave = n2*n3/n1;
+            [n4,n5,n6] = size(pwfs.fftPhasor);
+            nPointsObject = n6;
             if size(pwfs.q,3)~=nWave
                 if isempty(p)
                     setModulationData(pwfs,nWave,1)
@@ -571,48 +600,30 @@ end
             end
             pwfs.q(pwfs.u,pwfs.u,:) = reshape(wave, n1,[],nWave);
             pwfs.I4Q4 = zeros(size(pwfs.I4Q4));
-%             if pwfs.wvlRange ~=0
-%                 x = linspace(-1,1,size(pwfs.q,1));
-%                 [Xo, Yo] = meshgrid(x,x);
-%                 ratio = zeros(1,nWave);
-%                 for i = 1:nWave
-%                     ratio(i) = pwfs.wvlRange(i)/pwfs.wvlRange(ceil(end/2));
-%                     pwfs.q(:,:,i) = interp2(Xo,Yo,pwfs.q(:,:,i),Xo*ratio(i),Yo*ratio(i),'bicubic',0);
-%                 end
-%             end
-            ratio = [pwfs.wvlRange]/pwfs.wvlRange(ceil(end/2));
-            %x = linspace(-1,1,size(pwfs.q,1));
-            %[Xo, Yo] = meshgrid(x,x);
-            %ratio = 0.5;
-            %pwfs.q(:,:,1) = interp2(Xo,Yo,pwfs.q(:,:,1),Xo*ratio,Yo*ratio,'bicubic',0);
+            ratioWvl = [pwfs.wvlRange]/pwfs.wvlRange(ceil(end/2));
             
             if pwfs.modulation>0
                 if isempty(p)
                     % 1/ NO GPU ACCELERATION
-                    if gpuDeviceCount == 0
+                    if gpuDeviceCount == 0 %|| numel(pwfs.q) > 150000000 % if the required memory is too large to use a gpu...
                         tic
                         pwfs.fpIm = 0;
                         for kTheta = 1:pwfs.nTheta
                             theta = (kTheta-1)*2*pi/pwfs.nTheta;
                             
-                            fftPhasor = exp(-1i.*pi.*4*pwfs.modulation*...
-                                    pwfs.c*pwfs.r.*cos(pwfs.o+theta));
-                           
-                            buf = bsxfun(@times,pwfs.q,fftPhasor);
+                            fftPhasor_ = exp(-1i.*pi.*4*pwfs.modulation*...
+                                pwfs.c*pwfs.r.*cos(pwfs.o+theta));
+                            
+                            buf = bsxfun(@times,pwfs.q,fftPhasor_);
                             buf = bsxfun(@times,fft2(buf),pwfs.pyrMask);
                             if pwfs.viewFocalPlane
                                 pwfs.fpIm = pwfs.fpIm + fftshift(sum(abs(buf).^2,3));
                                 %imagesc(pwfs.fpIm);
                                 %drawnow
                             end
-                            %pwfs.I4Q4(:,:,:,kTheta) = abs(fft2(buf)).^2;
                             pwfs.I4Q4(:,:,:) = bsxfun(@plus,pwfs.I4Q4(:,:,:), abs(fft2(buf)).^2);
                         end
                         I4Q = pwfs.I4Q4/pwfs.nTheta;
-                        %                 figure
-                        %                 imagesc(tmp)
-                        %                 axis square
-                        %                 title(sprintf('Modulation=%d;c=%d',pwfs.modulation,pwfs.c))
                         toc
                     else
                         % 2/ WITH GPU ACCELERATION
@@ -637,86 +648,142 @@ end
                         %                         z=0;    % distance [??m]
                         %                         fresnelFourier = gpuArray(fftshift(exp(1i * 2 * pi * (z/lambda) * phasor)));
                         %pwfs.fpIm = 0;
-                        for kTheta = 1:pwfs.nTheta
-                            theta = (kTheta-1)*2*pi/pwfs.nTheta;
-                            if length(unique(ratio)) > 1
-                               fftPhasor = gpuArray(zeros([size(pwfs.o) nWave]));
-                               for i = 1:nWave
-                                   fftPhasor(:,:,i) = exp(-1i.*pi.*4*pwfs.modulation/ratio(i)*...
-                                       pwfs.c*pwfs.r.*cos(pwfs.o+theta));
-                               end
-                            else
-                                fftPhasor = gpuArray( exp(-1i.*pi.*4*pwfs.modulation*...
-                                    pwfs.c*pwfs.r.*cos(pwfs.o+theta))); % ATTENTION :: BUG :: should not use pwfs.c here ccorreia 12/04/2017
+                        if pwfs.extendedObject == 0 % Case parallel workers, single object
+                            
+                            for kTheta = 1:pwfs.nTheta
+                                theta = (kTheta-1)*2*pi/pwfs.nTheta;
+                                if length(unique(ratioWvl)) > 1
+                                    fftPhasor_ = gpuArray(zeros([size(pwfs.o) nWave]));
+                                    for i = 1:nWave
+                                        fftPhasor_(:,:,i) = exp(-1i.*pi.*4*pwfs.modulation/ratioWvl(i)*...
+                                            pwfs.c*pwfs.r.*cos(pwfs.o+theta));
+                                    end
+                                else
+                                    fftPhasor_ = gpuArray( exp(-1i.*pi.*4*pwfs.modulation*...
+                                        pwfs.c*pwfs.r.*cos(pwfs.o+theta))); % ATTENTION :: BUG :: should not use pwfs.c here ccorreia 12/04/2017
+                                end
+                                buf = bsxfun(@times,qGpu,fftPhasor_);
+                                if length(unique(ratioWvl)) > 1
+                                    buf = bsxfun(@times,myFft2mtx(buf,size(pwfs.I4Q4,1),ratioWvl),pyrMaskGpu)/length(ratioWvl);
+                                else
+                                    buf = bsxfun(@times,fft2(buf),pyrMaskGpu);
+                                end
+                                if pwfs.viewFocalPlane
+                                    pwfs.fpIm = pwfs.fpIm + fftshift(sum(abs(buf).^2,3));
+                                    imagesc(pwfs.fpIm);
+                                    drawnow
+                                    hold on
+                                end
+                                %if z == 0
+                                I4Q4Gpu = bsxfun(@plus,I4Q4Gpu, abs(fft2(buf)).^2);
+                                %else
+                                %    psi_d = (fft2(buf)); % Champ dans le plan pupille d??tecteur
+                                %    % JFS tests for Fresnel Propag
+                                %    psi_d_fresnel = ifft2(bsxfun(@times,fft2(psi_d), fresnelFourier)); % Champ propag??
+                                %    I4Q4Gpu = bsxfun(@plus,I4Q4Gpu, abs(psi_d_fresnel).^2);
+                                %end
                             end
-                            buf = bsxfun(@times,qGpu,fftPhasor);
-                            if length(unique(ratio)) > 1
-                                buf = bsxfun(@times,myFft2mtx(buf,size(pwfs.I4Q4,1),ratio),pyrMaskGpu)/length(ratio);
-                            else
-                                buf = bsxfun(@times,fft2(buf),pyrMaskGpu);
-                            end
-                            if pwfs.viewFocalPlane
-                                pwfs.fpIm = pwfs.fpIm + fftshift(sum(abs(buf).^2,3));
-                                %imagesc(pwfs.fpIm);
-                                %drawnow
-                            end
-                            %if z == 0
-                            I4Q4Gpu = bsxfun(@plus,I4Q4Gpu, abs(fft2(buf)).^2);
-                            %else
-                            %    psi_d = (fft2(buf)); % Champ dans le plan pupille d??tecteur
-                            %    % JFS tests for Fresnel Propag
-                            %    psi_d_fresnel = ifft2(bsxfun(@times,fft2(psi_d), fresnelFourier)); % Champ propag??
-                            %    I4Q4Gpu = bsxfun(@plus,I4Q4Gpu, abs(psi_d_fresnel).^2);
-                            %end
+                            
+                            
+                            I4Q = gather(I4Q4Gpu)/pwfs.nTheta;
+                            %clear I4Q4Gpu pyrMaskGpu qGpu fftPhaser buf; % reset gpuMemory
+                            toc
+                            
+%                         else % user defined modulation signal
+%                             % In this case, the modulation signal is
+%                             % defined by wfs.object
+%                             % (2) for zenith position, (3) for azimuth
+%                             % position and (6) for flux value
+%                             % wfs.fftPhasor contains the TT phasor for each
+%                             % of the modulation points
+%                             for kMode = 1:nWave
+%                                 buf = bsxfun(@times,qGpu(:,:,kMode),pwfs.fftPhasor); % multiplication by phasor => adds a tip-tilt in a pupil plane
+%                                 
+%                                 buf = bsxfun(@times,fft2(buf),pyrMaskGpu);
+%                                 if pwfs.viewFocalPlane % visualisation of the pyramid focal plane
+%                                     pwfs.fpIm = (sum(abs(buf).^2,3));
+%                                     figure(6666)
+%                                     imagesc(fftshift(pwfs.fpIm)); title('Image in the pyramid plane') ; colorbar
+%                                     drawnow
+%                                 end
+%                                 I4Q4Gpu = sum(abs(fft2(buf)).^2,3);
+%                                 I4Q(:,:,kMode) = gather(I4Q4Gpu);
+%                             end
                         end
-                        I4Q = gather(I4Q4Gpu)/pwfs.nTheta;
-                        toc
                     end
                 else %parallel implementation
                     % 1/ NO GPU ACCELERATION
-                    tic
-                    p_nTheta = pwfs.nTheta;
-                    modulation = pwfs.modulation;
-                    p_r = pwfs.r;
-                    p_o = pwfs.o;
-                    p_c = pwfs.c;
-                    p_q = pwfs.q;
-                    p_pyrMask = pwfs.pyrMask;
-                    parfor kTheta = 1:pwfs.nTheta
-                        theta = (kTheta-1)*2*pi/p_nTheta;
-                        fftPhasor = exp(-1i.*pi.*4*modulation*...
-                            p_c*p_r.*cos(p_o+theta));
-                        buf = bsxfun(@times,p_q,fftPhasor);
-                        buf = bsxfun(@times,fft2(buf),p_pyrMask);
-                        p_I4Q4(:,:,:,kTheta) = abs(fft2(buf)).^2;
-                    end
-                    I4Q = sum(p_I4Q4,4)/pwfs.nTheta;
-                    toc
                     
-                    % 2/ WITH GPU ACCELERATION 
-%                     tic
-%                     p_nTheta = pwfs.nTheta;
-%                     modulation = pwfs.modulation;
-%                     p_r = pwfs.r;
-%                     p_o = pwfs.o;
-%                     p_c = pwfs.c;
-%                     p_q = gpuArray(pwfs.q);
-%                     p_pyrMask = gpuArray(pwfs.pyrMask);
-%                     p_I4Q4Gpu = gpuArray(zeros(size(pwfs.I4Q4)));
-%                     parfor kTheta = 1:pwfs.nTheta
-%                         theta = (kTheta-1)*2*pi/p_nTheta;
-%                         fftPhasor = gpuArray(exp(-1i.*pi.*4*modulation*...
-%                             p_c*p_r.*cos(p_o+theta)));
-%                         buf = bsxfun(@times,p_q,fftPhasor);
-%                         buf = bsxfun(@times,fft2(buf),p_pyrMask);
-%                         p_I4Q4Gpu(:,:,:,kTheta) = abs(fft2(buf)).^2;
-%                     end
-%                     I4Q = sum(gather(p_I4Q4Gpu),4);
-%                     toc
+                    if pwfs.extendedObject == 0
+                        tic
+                        p_nTheta = pwfs.nTheta;
+                        modulation = pwfs.modulation;
+                        p_r = pwfs.r;
+                        p_o = pwfs.o;
+                        p_c = pwfs.c;
+                        p_q = pwfs.q;
+                        p_pyrMask = pwfs.pyrMask;
+                        parfor kTheta = 1:pwfs.nTheta
+                            theta = (kTheta-1)*2*pi/p_nTheta;
+                            fftPhasor_ = exp(-1i.*pi.*4*modulation*...
+                                p_c*p_r.*cos(p_o+theta));
+                            buf = bsxfun(@times,p_q,fftPhasor_);
+                            buf = bsxfun(@times,fft2(buf),p_pyrMask);
+                            p_I4Q4(:,:,:,kTheta) = abs(fft2(buf)).^2;
+                        end
+                        I4Q = sum(p_I4Q4,4)/pwfs.nTheta;
+                        toc
+                    else % user defined modulation signal, simulating an extended object
+                        % In this case, the modulation signal is
+                        % defined by wfs.object
+                        % (2) for zenith position, (3) for azimuth
+                        % position and (6) for flux value
+                        % wfs.fftPhasor contains the TT phasor for each
+                        % of the modulation points
+                        for kMode = 1:nWave
+                            buf = bsxfun(@times,pwfs.q,pwfs.fftPhasor); % multiplication by phasor => adds a tip-tilt in a pupil plane
+                            pyrMask_ = pwfs.pyrMask;
+                            
+                            %                             parfor kObject = 1:size(pwfs.object,3)
+                            %                                 buf(:,:,kObject) = bsxfun(@times,fft2(buf(:,:,kObject)),pyrMask_);
+                            %                             end
+                            buf = bsxfun(@times,fft2(buf),pyrMask_);
+                            
+                                if pwfs.viewFocalPlane % visualisation of the pyramid focal plane
+                                    pwfs.fpIm = (sum(abs(buf).^2,3));
+                                    figure(6666)
+                                    imagesc(fftshift(pwfs.fpIm)); title('Image in the pyramid plane') ; colorbar
+                                    drawnow
+                            end
+                            I4Q4Gpu = sum(abs(fft2(buf)).^2,3);
+                            I4Q(:,:,kMode) = gather(I4Q4Gpu);
+                        end
+                    end
+                    
+                    % 2/ WITH GPU ACCELERATION
+                    %                     tic
+                    %                     p_nTheta = pwfs.nTheta;
+                    %                     modulation = pwfs.modulation;
+                    %                     p_r = pwfs.r;
+                    %                     p_o = pwfs.o;
+                    %                     p_c = pwfs.c;
+                    %                     p_q = gpuArray(pwfs.q);
+                    %                     p_pyrMask = gpuArray(pwfs.pyrMask);
+                    %                     p_I4Q4Gpu = gpuArray(zeros(size(pwfs.I4Q4)));
+                    %                     parfor kTheta = 1:pwfs.nTheta
+                    %                         theta = (kTheta-1)*2*pi/p_nTheta;
+                    %                         fftPhasor = gpuArray(exp(-1i.*pi.*4*modulation*...
+                    %                             p_c*p_r.*cos(p_o+theta)));
+                    %                         buf = bsxfun(@times,p_q,fftPhasor);
+                    %                         buf = bsxfun(@times,fft2(buf),p_pyrMask);
+                    %                         p_I4Q4Gpu(:,:,:,kTheta) = abs(fft2(buf)).^2;
+                    %                     end
+                    %                     I4Q = sum(gather(p_I4Q4Gpu),4);
+                    %                     toc
                     
                 end
             else
-                            
+                
                 
                 I4Q = bsxfun(@times,fft2(pwfs.q),pwfs.pyrMask);
                 if pwfs.viewFocalPlane
@@ -729,17 +796,15 @@ end
             pwfs.lightMap = reshape(I4Q,pwfs.pxSide,...
                 pwfs.pxSide*nWave);
         end
-        
-        
         %% make the pyramid phase mask
         function makePyrMask(pwfs)
             
-            if isscalar(pwfs.alpha) 
+            if isscalar(pwfs.alpha)
                 l_alpha = ones(1,4)*pwfs.alpha;
             else
                 l_alpha = pwfs.alpha;
             end
-                
+            
             nx = pwfs.rooftop(1);
             ny = pwfs.rooftop(2);
             
@@ -767,6 +832,25 @@ end
             pwfs.pyrMask   = fftshift(pym./sum(abs(pym(:))));
         end
         
+        %% make the pyramid fftPhasor for a user-defined extended object
+        function makeFftPhasor(pwfs)
+                nSrc = size(pwfs.object,2);
+                %             pwfs.fftPhasor = gpuArray(zeros([size(pwfs.pyrMask) nSrc]));
+                cpuFftPhasor = zeros([size(pwfs.pyrMask) nSrc]);
+                wvlOverD = pwfs.object(1).wavelength/pwfs.tel.D;
+                'Creation of FftPhasor in GPU'
+                'Object size : '
+                nSrc
+                for kSrc = 1:nSrc
+                    %                 pwfs.fftPhasor(:,:,kSrc) = exp(-1i.*pi.*4*pwfs.object(kSrc).zenith/wvlOverD*...
+                    %                     pwfs.c*pwfs.r.*cos(pwfs.o+pwfs.object(kSrc).azimuth));
+                    cpuFftPhasor(:,:,kSrc) = exp(-1i.*pi.*4*pwfs.object(kSrc).zenith/wvlOverD*...
+                                        pwfs.c*pwfs.r.*cos(pwfs.o+pwfs.object(kSrc).azimuth));
+                end
+                pwfs.fftPhasor = cpuFftPhasor;
+                'Done !'
+                clear cpuFftPhasor;
+        end
         %% Compute slopes from 4 intensity maps
         function computeSlopes(pwfs, I1, I2, I3, I4)
             
@@ -779,7 +863,7 @@ end
             I = mean(I2D(pwfs.validDetectorPixels))*ones(size(I));
             
             SyMap = (I1-I2+I4-I3)./I;
-            SxMap = (I1-I4+I2-I3)./I;             
+            SxMap = (I1-I4+I2-I3)./I;
             SxMap = flip(flip(SxMap,1),2);
             SyMap = flip(flip(SyMap,1),2);
             pwfs.slopesMap = bsxfun(@minus,[SxMap,SyMap],pwfs.referenceSlopesMap);
@@ -792,3 +876,4 @@ end
         
     end
 end
+
