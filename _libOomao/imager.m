@@ -22,6 +22,8 @@ classdef imager < detector
         ee;
         % entrapped energy slit width
         eeWidth;
+        % telescope diameter
+        diameter
     end
         
     properties (Access=private)
@@ -29,6 +31,7 @@ classdef imager < detector
 %         frameCount=0;
         % telescope
         tel;
+        %diameter
     end
     
     methods
@@ -41,26 +44,38 @@ classdef imager < detector
               addParameter(p,'fieldStopSize',10,@isnumeric)
               addParameter(p,'exposureTime',1,@isnumeric)
               addParameter(p,'clockRate',1,@isnumeric)
+              addParameter(p,'diameter',1,@isnumeric)
+              %addOptional(p,'tel', telescope(-1), @(x) isa(x,'telescopeAbstract') );
+              
+              
               parse(p,varargin{:})
               
-%             if isa(in,'telescopeAbstract')
-%                 resolution = in.resolution;
-%             elseif isnumeric(in)
-%                 resolution = in;
-%             else
-%                 error('oomao:imager','Inputer is either numeric or a telescope class')
-%             end
-            resolution = 2*p.Results.nyquistSampling*p.Results.fieldStopSize;
-            obj = obj@detector(resolution);
-            obj.imgLens = lensletArray(1);
-            obj.imgLens.nyquistSampling = p.Results.nyquistSampling;
-            obj.imgLens.fieldStopSize = p.Results.fieldStopSize;
-%             if isa(in,'telescopeAbstract')
-%                 obj.tel = in;
-%                 obj.exposureTime = in.samplingTime;
-%             end
-                obj.exposureTime = p.Results.exposureTime;
-                obj.clockRate = p.Results.clockRate;
+              %             if isa(in,'telescopeAbstract')
+              %                 resolution = in.resolution;
+              %             elseif isnumeric(in)
+              %                 resolution = in;
+              %             else
+              %                 error('oomao:imager','Inputer is either numeric or a telescope class')
+              %             end
+              
+              resolution = 2*p.Results.nyquistSampling*p.Results.fieldStopSize;
+              obj = obj@detector(resolution);
+              obj.imgLens = lensletArray(1);
+              obj.imgLens.nyquistSampling = p.Results.nyquistSampling;
+              obj.imgLens.fieldStopSize = p.Results.fieldStopSize;
+              %             if isa(in,'telescopeAbstract')
+              %                 obj.tel = in;
+              %                 obj.exposureTime = in.samplingTime;
+              %             end
+              obj.exposureTime = p.Results.exposureTime;
+              obj.clockRate = p.Results.clockRate;
+              if ~isempty(p.Results.diameter)
+                  obj.diameter = p.Results.diameter;
+              else
+                  obj.diameter = 1;
+                  fprintf('Caution, a default 1m telescope is associated to the class\n')
+              end
+              
                % Frame listener
 %             obj.frameListener = addlistener(obj,'frameBuffer','PostSet',...
 %                 @(src,evnt) obj.imagesc );
@@ -85,47 +100,68 @@ classdef imager < detector
 %             end
               readOut(obj,obj.imgLens.imagelets)
               if obj.frameCount==0 && obj.startDelay==0
-                  flush(obj)
+                  flush(obj,length(src))
               end
         end
         
-        function flush(obj)
+        function flush(obj,nSrc)
             %fprintf(' @(detector:relay)> reading out and emptying buffer (%d frames)!\n',obj.frameCount)
+            if nargin<2
+                nSrc = 1;
+            end
             if ~isempty(obj.referenceFrame) && ~isempty(obj.frame)
                 obj.imgLens.fieldStopSize = obj.imgLens.fieldStopSize*2;
                 src_ = source.*obj.referenceFrame;
                 wavePrgted = propagateThrough(obj.imgLens,src_);
                 otf =  abs(wavePrgted);
+                otf = mat2cell(otf,size(otf,1),size(otf,2)/nSrc*ones(1,nSrc));
                 nFrame = obj.exposureTime*obj.clockRate;
                 
-                n = length(obj.referenceFrame);
+                [n1,n2] = size(obj.referenceFrame);%n = length(obj.referenceFrame);
                 m_frame = obj.frame/nFrame;
-                nf = size(m_frame)/n;                
-                m_frame = mat2cell( m_frame , n*ones(1,nf(1)), n*ones(1,nf(2)));
+                nf = [nSrc size(m_frame,2)/n2]; %nf = size(m_frame)/n;
+                m_frame = mat2cell( m_frame , n1, n2*ones(1,nf(2))); % m_frame = mat2cell( m_frame , n*ones(1,nf(1)), n*ones(1,nf(2)));
                 
-                obj.strehl = zeros(1,length(m_frame));
-                obj.ee     = zeros(1,length(m_frame));
-                a = [];
+                obj.strehl = zeros(nf);% obj.strehl = zeros(1,length(m_frame));
+                if ~isempty(obj.eeWidth)
+                    obj.ee     = zeros([nf length(obj.eeWidth)]);%zeros(1,length(m_frame));
+                end
+                
+                if ~isempty(obj.tel)
+                    D = obj.tel.D;
+                else
+                    D = obj.diameter;
+                end
                 for kFrame = 1:length(m_frame)
                     src_ = src_.*m_frame{kFrame};
                     wavePrgted = propagateThrough(obj.imgLens,src_);
                     otfAO =  abs(wavePrgted);
-                    a = [a otfAO];
-                    % strehl ratio
-                    obj.strehl(kFrame) = sum(otfAO(:))/sum(otf(:));
-                    % entrapped energy
-%                     if ~isempty(obj.eeWidth)
-%                         a      = (obj.eeWidth/(src_.wavelength/obj.tel.D*constants.radian2arcsec))/obj.tel.D;
-%                         nOtf   = length(otfAO);
-%                         u      = linspace(-1,1,nOtf).*obj.tel.D;
-%                         [x,y]  = meshgrid(u);
-%                         eeFilter ...
-%                             = a^2*(sin(pi.*x.*a)./(pi.*x.*a)).*...
-%                             (sin(pi.*y.*a)./(pi.*y.*a));
-%                         otfAO = otfAO/max(otfAO(:));
-%                         obj.ee(kFrame) = real(trapz(u,trapz(u,otfAO.*eeFilter)));
-%                     end
-
+                    otfAO = mat2cell(otfAO,size(otfAO,1),size(otfAO,2)/nSrc*ones(1,nSrc));
+                    
+                    for kobj=1:nSrc
+                        %a = [a otfAO];
+                        % strehl ratio
+                        obj.strehl(kobj,kFrame) = sum(otfAO{kobj}(:))/sum(otf{kobj}(:));
+                        % entrapped energy
+                        
+                        if ~isempty(obj.eeWidth)
+                            for kIntegBoxSize = 1:length(obj.eeWidth)
+                                a      = (obj.eeWidth(kIntegBoxSize)/(src_.wavelength/D*constants.radian2arcsec))/D;
+                                nOtf   = length(otfAO{kobj});
+                                u      = linspace(-1,1,nOtf).*D;
+                                [x,y]  = meshgrid(u);
+                                eeFilter ...
+                                    = a^2*(sin(pi.*x.*a)./(pi.*x.*a)).*...
+                                    (sin(pi.*y.*a)./(pi.*y.*a));
+                                otfAO{kobj} = otfAO{kobj}/max(otfAO{kobj}(:));
+                                obj.ee(kFrame,kIntegBoxSize) = real(trapz(u,trapz(u,otfAO{kobj}.*eeFilter)));
+                                % go to
+                                % http://web.ipac.caltech.edu/staff/fmasci/home/astro_refs/PSFtheory.pdf
+                                % for checking the accuracy of this function using the DL PSF. When
+                                % done delete this comment. ccorreia 7/12/2016
+                            end
+                        end
+                    end
                 end
                 obj.imgLens.fieldStopSize = obj.imgLens.fieldStopSize/2;
             end
