@@ -221,7 +221,7 @@ classdef multiDeformableMirror < handle
             end
         end
         
-        function calibMultiDmCell = calibration(obj,sensor,srcs,calibDmStroke,steps,varargin)
+       function calibMultiDmCell = calibration(obj,sensor,srcs,calibDmStroke,steps,varargin)
             nSrcs = numel(srcs);
             calibMultiDmCell = cell(obj.nDm,nSrcs);
             if nargin<5 || isempty(steps)
