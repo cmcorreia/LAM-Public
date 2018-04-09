@@ -58,7 +58,8 @@ classdef pyramid < handle
         % (for compatability with shackHartmann
         % functions)
         pyrMask;                    % pyramid face transmitance and phase
-        fpIm = 0;                       % image of the focal plane at the tip of the pyramid
+        fpIm = 0;                   % image of the focal plane at the tip of the pyramid
+        frameCalibration            % detector pixel intensity for the calibration WFS with larger modulation
     end
     
     properties(SetAccess=private,SetObservable=true)
@@ -209,7 +210,7 @@ classdef pyramid < handle
             if nargin == 2 % user custom value
                 pwfs.validDetectorPixels = logical(val);
                 pwfs.validSlopes = [pwfs.validDetectorPixels pwfs.validDetectorPixels];
-            else
+            elseif nargin == 1 && pwfs.tel.D < 0
                 pwfs.validDetectorPixels = utilities.piston((pwfs.nLenslet)/pwfs.p_binning,...
                     pwfs.nLenslet*pwfs.c/pwfs.p_binning,'type','logical','xOffset',0,'yOffset',0);
                 if pwfs.obstructionRatio
@@ -219,11 +220,8 @@ classdef pyramid < handle
                     centralHole = 0;
                 end
                 pwfs.validDetectorPixels = logical(pwfs.validDetectorPixels - centralHole);
-            end
-            
-            % is a telescope and a source are defined a criterion with the
-            % minLightRation is applied
-            if ~pwfs.isInternalCalibrationPWFS && pwfs.tel.D > 0
+            elseif ~pwfs.isInternalCalibrationPWFS && pwfs.tel.D > 0    % if a telescope and a source are defined a criterion with the
+                                                                        % minLightRation is applied
                 pwfs_ = pyramid(pwfs.nLenslet,pwfs.resolution,'modulation',pwfs.modulationCalibPwfs,'alpha',pwfs.alpha,'c',pwfs.c,...
                     'isInternalCalibrationPWFS',1,...
                     'obstructionRatio',pwfs.obstructionRatio,...
@@ -245,6 +243,12 @@ classdef pyramid < handle
                 subplot(1,3,3)
                 imagesc(pwfs.validDetectorPixels)
                 axis square
+                pwfs.frameCalibration = pwfs_.camera.frame;
+                
+                idx = 1:length(pwfs.validDetectorPixels);
+                diff = length(idx)-pwfs.nLenslet;
+                idx = idx(diff/2+1:end-diff/2);
+                pwfs.setValidLenslet(pwfs.validDetectorPixels(idx,idx));
             end
         end
         
@@ -689,26 +693,26 @@ classdef pyramid < handle
                             %clear I4Q4Gpu pyrMaskGpu qGpu fftPhaser buf; % reset gpuMemory
                             toc
                             
-%                         else % user defined modulation signal
-%                             % In this case, the modulation signal is
-%                             % defined by wfs.object
-%                             % (2) for zenith position, (3) for azimuth
-%                             % position and (6) for flux value
-%                             % wfs.fftPhasor contains the TT phasor for each
-%                             % of the modulation points
-%                             for kMode = 1:nWave
-%                                 buf = bsxfun(@times,qGpu(:,:,kMode),pwfs.fftPhasor); % multiplication by phasor => adds a tip-tilt in a pupil plane
-%                                 
-%                                 buf = bsxfun(@times,fft2(buf),pyrMaskGpu);
-%                                 if pwfs.viewFocalPlane % visualisation of the pyramid focal plane
-%                                     pwfs.fpIm = (sum(abs(buf).^2,3));
-%                                     figure(6666)
-%                                     imagesc(fftshift(pwfs.fpIm)); title('Image in the pyramid plane') ; colorbar
-%                                     drawnow
-%                                 end
-%                                 I4Q4Gpu = sum(abs(fft2(buf)).^2,3);
-%                                 I4Q(:,:,kMode) = gather(I4Q4Gpu);
-%                             end
+                        else % user defined modulation signal
+                            % In this case, the modulation signal is
+                            % defined by wfs.object
+                            % (2) for zenith position, (3) for azimuth
+                            % position and (6) for flux value
+                            % wfs.fftPhasor contains the TT phasor for each
+                            % of the modulation points
+                            for kMode = 1:nWave
+                                buf = bsxfun(@times,qGpu(:,:,kMode),pwfs.fftPhasor); % multiplication by phasor => adds a tip-tilt in a pupil plane
+                                
+                                buf = bsxfun(@times,fft2(buf),pyrMaskGpu);
+                                if pwfs.viewFocalPlane % visualisation of the pyramid focal plane
+                                    pwfs.fpIm = (sum(abs(buf).^2,3));
+                                    figure(6666)
+                                    imagesc(fftshift(pwfs.fpIm)); title('Image in the pyramid plane') ; colorbar
+                                    drawnow
+                                end
+                                I4Q4Gpu = sum(abs(fft2(buf)).^2,3);
+                                I4Q(:,:,kMode) = gather(I4Q4Gpu);
+                            end
                         end
                     end
                 else %parallel implementation
