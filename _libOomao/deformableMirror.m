@@ -21,7 +21,7 @@ classdef deformableMirror < handle
     % function
     %
     % See also influenceFunction
-   
+    
     properties
         % conjugation altitude
         zLocation = 0;
@@ -39,8 +39,15 @@ classdef deformableMirror < handle
         lex = false;
         % units of dm coefficients [default: micron]
         coefsUnit = 1;%e-6;
+        % the poke Matrix
+        thePokeMatrix;
+        % the poke matrix full frame when the WFS is a pyramid
+        pokeMatrixFullFrame;
+        
         % deformableMirror tag
         tag = 'DEFORMABLE MIRROR';
+        % optical equivalent diameter of the DM
+        diameter
     end
     
     properties (SetObservable=true,Dependent,SetAccess=private)
@@ -49,28 +56,32 @@ classdef deformableMirror < handle
     end
     
     properties (Dependent,SetAccess=private)
-         % # of actuators in the pupil
+        % # of actuators in the pupil
         nValidActuator;
-   end
+    end
     
     properties (Dependent)
         % valid actuator
         validActuator;
-   end
+    end
     
     properties (Dependent, SetObservable=true)
         % coefficients
         coefs;
+        % Reference coefficients.  Coefs will always be set to
+        % coefs+coefsRef.  Default is zero.
+        coefsRef;
     end
     
     properties (Access=private)
-        p_coefs; 
+        p_coefs;
+        p_coefsRef;
         p_surface;
         p_validActuator;
         imageHandle;
         log;
     end
-        
+    
     methods
         
         %% Constructor
@@ -78,29 +89,38 @@ classdef deformableMirror < handle
             p = inputParser;
             p.addRequired('nActuator', @isnumeric);
             p.addParameter('modes', [], @(x) isnumeric(x) || ...
-                (isa(x,'influenceFunction') || isa(x,'zernike') || isa(x,'hexagonalPistonTipTilt')) );
+                (isa(x,'influenceFunction') || isa(x,'gaussianInfluenceFunction') ...
+                || isa(x,'splineInfluenceFunction') || isa(x,'zernike') ...
+                || isa(x,'hexagonalPistonTipTilt')) || isa(x,'differentialGaussianInfluenceFunction'));
+            
             p.addParameter('resolution', [], @isnumeric);
             p.addParameter('validActuator', ones(nActuator), @islogical);
             p.addParameter('zLocation', 0, @isnumeric);
             p.addParameter('offset', [0,0], @isnumeric);
+            p.addParameter('diameter', [], @isnumeric);
             p.parse(nActuator, varargin{:});
             obj.nActuator         = p.Results.nActuator;
             obj.p_validActuator     = p.Results.validActuator;
             obj.modes             = p.Results.modes;
             obj.zLocation             = p.Results.zLocation;
             setSurfaceListener(obj)
-            if ( isa(obj.modes,'influenceFunction') || isa(obj.modes,'hexagonalPistonTipTilt')) && ~isempty(p.Results.resolution)
+            if ( isa(obj.modes,'influenceFunction') || isa(obj.modes,'hexagonalPistonTipTilt')...
+                    || isa(obj.modes,'gaussianInfluenceFunction') || isa(obj.modes,'differentialGaussianInfluenceFunction') ) && ~isempty(p.Results.resolution)
                 setInfluenceFunction(obj.modes,obj.nActuator,...
-                    p.Results.resolution,obj.validActuator,1,p.Results.offset);
+                    p.Results.resolution,obj.validActuator,1,p.Results.offset, p.Results.diameter);
             elseif isa(obj.modes,'zernike')
                 obj.p_validActuator = true(1,obj.modes.nMode);
             end
             if isa(obj.modes,'hexagonalPistonTipTilt')
                 obj.coefsDefault      = zeros(3*obj.nValidActuator,1);
+                obj.coefsRef          = zeros(3*obj.nValidActuator,1);
                 obj.coefs             = zeros(3*obj.nValidActuator,1);
+                
             else
                 obj.coefsDefault      = zeros(obj.nValidActuator,1);
+                obj.coefsRef          = zeros(obj.nValidActuator,1);
                 obj.coefs             = zeros(obj.nValidActuator,1);
+                
             end
             obj.log = logBook.checkIn(obj);
             display(obj)
@@ -108,9 +128,9 @@ classdef deformableMirror < handle
         
         %% Destructor
         function delete(obj)
-%             if isa(obj.modes,'influenceFunction')
-%                 delete(obj.modes)
-%             end
+            %             if isa(obj.modes,'influenceFunction')
+            %                 delete(obj.modes)
+            %             end
             checkOut(obj.log,obj)
         end
         
@@ -119,7 +139,7 @@ classdef deformableMirror < handle
             %
             % display(obj) prints information about the deformable mirror
             % object
-          
+            
             fprintf('___ %s ___\n',obj.tag)
             fprintf(' %dX%d actuators deformable mirror: \n  . %d controlled actuators\n',...
                 obj.nActuator,obj.nActuator,obj.nValidActuator)
@@ -127,18 +147,36 @@ classdef deformableMirror < handle
             if isa(obj.modes,'influenceFunction')
                 display(obj.modes)
             end
-
+            
         end
         
         function obj = saveobj(obj)
             %% SAVEOBJ
             delete(obj.surfaceListener)
             add(obj.log,obj,'Save!')
-        end        
+        end
         
         %% Get nValidActuator
         function out = get.nValidActuator(obj)
             out = sum(obj.validActuator(:));
+        end
+        
+        %% Set and Get coefsRef
+        function out = get.coefsRef(obj)
+            out = obj.p_coefsRef;
+        end
+        function set.coefsRef(obj,val)
+            if isscalar(val)
+                val = ones(obj.nValidActuator,1)*val;
+            end
+            obj.p_coefsRef = obj.coefsUnit*bsxfun(@plus,val,obj.coefsDefault);
+            if isa(obj.driver,'function_handle')
+                obj.driver(obj.p_coefsRef);
+                return
+            end
+            if isvalid(obj.surfaceListener) && obj.surfaceListener.Enabled
+                imagesc(obj);
+            end
         end
         
         %% Set and Get coefs
@@ -150,6 +188,7 @@ classdef deformableMirror < handle
                 val = ones(obj.nValidActuator,1)*val;
             end
             obj.p_coefs = obj.coefsUnit*bsxfun(@plus,val,obj.coefsDefault);
+            obj.p_coefs = bsxfun(@plus,obj.p_coefs,obj.coefsRef);
             if isa(obj.driver,'function_handle')
                 obj.driver(obj.p_coefs);
                 return
@@ -159,6 +198,7 @@ classdef deformableMirror < handle
             end
         end
         
+        
         %% Set and Get validActuator
         function out = get.validActuator(obj)
             out = obj.p_validActuator;
@@ -167,6 +207,7 @@ classdef deformableMirror < handle
             if obj.nValidActuator>=sum(val(:))
                 val(~obj.p_validActuator)  = [];
                 obj.coefsDefault(~val)     = [];
+                obj.coefsRef(~val)     = [];
                 obj.p_coefs(~val)          = [];
                 obj.modes.modes(:,~val)    = [];
                 obj.p_validActuator        = val;
@@ -174,7 +215,6 @@ classdef deformableMirror < handle
                 error('oomao:deformableMirror:set.validActuator','Sorry only downsizing is possible!')
             end
         end        
-        
         %% Get the dm shape
         function dmShape = get.surface(obj)
             obj.p_surface = obj.modes*obj.coefs;
@@ -185,29 +225,59 @@ classdef deformableMirror < handle
             end
         end
         
-        function relay(obj,src)
+        function relay(obj,srcs)
             %% RELAY deformable mirror to source relay
             %
             % relay(obj,srcs) writes the deformableMirror amplitude and
             % phase into the properties of the source object(s)
             
-            nSrc       = numel(src);
-            wavenumber = 2*pi/src(1).wavelength;
+            nSrc       = numel(srcs);
+            wavenumber = 2*pi/srcs(1).wavelength;
             dmPhase    = -2*obj.surface*wavenumber;
             nPhase     = size(obj.p_coefs,2);
-            if nPhase>nSrc
-                for kSrc = 1:nSrc
-                    src(kSrc).phase = dmPhase;
-                    src(kSrc).amplitude = 1;
+            if obj.zLocation == 0
+                if nPhase>nSrc
+                    for kSrc = 1:nSrc
+                        srcs(kSrc).phase = dmPhase;
+                        srcs(kSrc).amplitude = 1;
+                    end
+                else
+                    for kSrc = 1:nSrc
+                        srcs(kSrc).phase = dmPhase(:,:,min(kSrc,nPhase));
+                        srcs(kSrc).amplitude = 1;
+                    end
                 end
             else
                 for kSrc = 1:nSrc
-                    src(kSrc).phase = dmPhase(:,:,min(kSrc,nPhase));
-                    src(kSrc).amplitude = 1;
+                    src = srcs(kSrc);
+                    height          = obj.zLocation;
+                    tel             = src.opticalPath{1};
+                    sampler_m       = linspace(-1,1,tel.resolution);
+                    phase_m         = dmPhase;
+                    R_              = tel.D/2;
+                    D_m = tel.D + 2*height.*tan(0.5*tel.fieldOfView);
+                    do = tel.D/(tel.resolution-1);
+                    layersNPixel = 1 + round(D_m./do);
+                    srcDirectionVector1 = src.directionVector(1);
+                    srcDirectionVector2 = src.directionVector(2);
+                    srcHeight = src.height;
+                    m_origin = tel.origin;
+                    out = zeros(size(src.amplitude,1),size(src.amplitude,2),nPhase);
+                    layerSampling_m = D_m*0.5*linspace(-1,1,layersNPixel);
+                    [xs,ys] = meshgrid(layerSampling_m);
+                    layerR = R_*(1-height./srcHeight);
+                    u = sampler_m*layerR;
+                    xc = height.*srcDirectionVector1;
+                    yc = height.*srcDirectionVector2;
+                    [xi,yi] = meshgrid(u+xc+m_origin(1),u+yc+m_origin(2));
+                    for kPhase = 1:nPhase
+                        out(:,:,kPhase) = utilities.linear(xs,ys,phase_m(:,:,kPhase),xi,yi);
+                    end
+                    srcs(kSrc).phase = out;
+                    srcs(kSrc).amplitude = 1;
                 end
             end
         end
-        
         
         function obj = mldivide(obj,src)
             %% \ Least square fit to the influence functions
@@ -215,12 +285,11 @@ classdef deformableMirror < handle
             % obj = obj\src fits the source object wavefront onto the
             % deformable mirror object influence functions and stro the
             % projection coefficients into the object coefficients vector
-
+            
             F = obj.modes.modes(src.mask,:);
             maps = utilities.toggleFrame(src.phase,2);
             obj.coefs = 0.5*(F\maps(src.mask,:))/src.waveNumber;
         end
-        
         function calib = calibration(obj,sensor,src,calibDmStroke,steps,varargin)
             %% CALIBRATION DM calibration
             %
@@ -232,6 +301,11 @@ classdef deformableMirror < handle
             % calibrate the DM object with the sensor object using the
             % calibration source src and the actuator stroke calibDmStroke;
             % the calibration process is split in nSteps steps.
+            if ~isempty(obj.thePokeMatrix)
+                doPokeMatrix = 0;
+            else
+                doPokeMatrix = 1;
+            end
             
             obj.coefs = 0;
             if nargin<5 || isempty(steps)
@@ -242,67 +316,96 @@ classdef deformableMirror < handle
             end
             
             if isa(sensor,'pyramid') || sensor.lenslets.nLenslet>1
-                
-                src = src*obj*sensor;
-                
-                if isscalar(calibDmStroke)
-                    calibDmCommands = speye(obj.nValidActuator)*calibDmStroke;
-                else
-                    calibDmCommands = calibDmStroke;
-                    calibDmStroke = 1;
-                end
-                
-                tId = tic;
-                if steps==1
-                    obj.coefs = calibDmCommands;
-                    +src;
-                    sp = sensor.slopes;
-                    obj.coefs = -calibDmCommands;
-                    +src;
-                    sm = sensor.slopes;
-                    pokeMatrix = 0.5*(sp-sm);
-                else
-                    nMode = size(calibDmCommands,2);
-                    nC              = floor(nMode/steps);
-                    u               = 0;
-                    pokeMatrix  = zeros(sensor.nSlope,nMode);
-%                     fprintf(' . actuators range:          ')
-                    h = waitbar(0,'DM/WFS calibration ...');
-                    while u(end)<nMode
-                        u = u(end)+1:min(u(end)+nC,nMode);
-                        waitbar(u(end)/nMode)
-                        fprintf('\b\b\b\b\b\b\b\b\b%4d:%4d',u(1),u(end))
-                        obj.coefs = calibDmCommands(:,u);
+                if doPokeMatrix
+                    src = src*obj*sensor;
+                    
+                    if isscalar(calibDmStroke)
+                        calibDmCommands = speye(obj.nValidActuator)*calibDmStroke;
+                    else
+                        [n,m] = size(calibDmStroke);
+                        if n~=m % if it's a vector
+                            if m > n
+                                calibDmStroke = calibDmStroke'; % make sure the input is a column vector
+                            end
+                            n = max(n,m);
+                            calibDmStroke = spdiags(calibDmStroke,0,n,n);
+                        end
+                        calibDmCommands = calibDmStroke;
+                        %calibDmStroke = 1;
+                    end
+                    
+                    tId = tic;
+                    if steps==1
+                        obj.coefs = calibDmCommands;
                         +src;
                         sp = sensor.slopes;
-                        obj.coefs = -calibDmCommands(:,u);
+                        spFullFrame = reshape(sensor.camera.frame,size(sensor.camera.frame,1)^2,[]);
+                        obj.coefs = -calibDmCommands;
                         +src;
                         sm = sensor.slopes;
-                        pokeMatrix(:,u) = 0.5*(sp-sm);
+                        smFullFrame = reshape(sensor.camera.frame,size(sensor.camera.frame,1)^2,[]);
+                        pokeMatrix = 0.5*(sp-sm);
+                        obj.pokeMatrixFullFrame = 0.5*(spFullFrame-smFullFrame);
+                        
+                        nMode = size(calibDmCommands,2);
+                        slopesStats = zeros(nMode,3);
+                        slopesStats(:,1) = max(sp);
+                        slopesStats(:,2) = min(sp);
+                        slopesStats(:,3) = std(sp);
+                    else
+                        nMode = size(calibDmCommands,2);
+                        nC              = floor(nMode/steps);
+                        u               = 0;
+                        pokeMatrix  = zeros(sensor.nSlope,nMode);
+                        slopesStats = zeros(3,nMode);
+                        %                     fprintf(' . actuators range:          ')
+                        h = waitbar(0,'DM/WFS calibration ...');
+                        while u(end)<nMode
+                            u = u(end)+1:min(u(end)+nC,nMode);
+                            waitbar(u(end)/nMode)
+                            fprintf('\b\b\b\b\b\b\b\b\b%4d:%4d',u(1),u(end))
+                            obj.coefs = calibDmCommands(:,u);
+                            +src;
+                            sp = sensor.slopes;
+                            spFullFrame = reshape(sensor.camera.frame,size(sensor.camera.frame,1)^2,[]);
+                            obj.coefs = -calibDmCommands(:,u);
+                            +src;
+                            sm = sensor.slopes;
+                            smFullFrame = reshape(sensor.camera.frame,size(sensor.camera.frame,1)^2,[]);
+                            
+                            pokeMatrix(:,u) = 0.5*(sp-sm);
+                            obj.pokeMatrixFullFrame(:,u) = 0.5*(spFullFrame-smFullFrame);
+                            
+                            slopesStats(u,1) = max(sp);
+                            slopesStats(u,2) = min(sp);
+                            slopesStats(u,3) = std(sp);
+                        end
+                        close(h)
                     end
-                    close(h)
-                end
-                elt = toc(tId);
-                
-%                 pokeMatrix = src.wavelength*pokeMatrix./calibDmStroke;
-                fprintf('__ Poke Matrix Stats ___\n')
-                fprintf(' . computing time: %5.2fs\n',elt)
-                fprintf(' . size: %dx%d\n',size(pokeMatrix))
-                nonZerosIndex = pokeMatrix(:)~=0;
-                nonZeros = sum(nonZerosIndex);
-                fprintf(' . non zeros values: %d i.e. %4.2f%%\n',nonZeros,100*nonZeros/numel(pokeMatrix))
-                pokeMatrixNZ = pokeMatrix(nonZerosIndex);
-                fprintf(' . min. and max. values: [%5.2f,%5.2f]\n',max(pokeMatrixNZ),min(pokeMatrixNZ))
-                fprintf(' . mean and median of absolute values: [%5.2f,%5.2f]\n',mean(abs(pokeMatrixNZ)),median(abs(pokeMatrixNZ)))
-                fprintf('________________________\n')
-
-                pokeMatrix = pokeMatrix./calibDmStroke;
-                if isnumeric(obj.modes)
-                    calib = calibrationVault(pokeMatrix,obj.modes,src.mask,varargin{:});
+                    elt = toc(tId);
+                    
+                    %                 pokeMatrix = src.wavelength*pokeMatrix./calibDmStroke;
+                    fprintf('__ Poke Matrix Stats ___\n')
+                    fprintf(' . computing time: %5.2fs\n',elt)
+                    fprintf(' . size: %dx%d\n',size(pokeMatrix))
+                    nonZerosIndex = pokeMatrix(:)~=0;
+                    nonZeros = sum(nonZerosIndex);
+                    fprintf(' . non zeros values: %d i.e. %4.2f%%\n',nonZeros,100*nonZeros/numel(pokeMatrix))
+                    pokeMatrixNZ = pokeMatrix(nonZerosIndex);
+                    fprintf(' . min. and max. values: [%5.2f,%5.2f]\n',max(pokeMatrixNZ),min(pokeMatrixNZ))
+                    fprintf(' . mean and median of absolute values: [%5.2f,%5.2f]\n',mean(abs(pokeMatrixNZ)),median(abs(pokeMatrixNZ)))
+                    fprintf('________________________\n')
+                    
+                    pokeMatrix = pokeMatrix*diag((1./diag(calibDmStroke)));
                 else
-                    calib = calibrationVault(pokeMatrix,obj.modes.modes,src.mask,varargin{:});
+                    pokeMatrix = obj.thePokeMatrix;
                 end
-            else 
+                if isnumeric(obj.modes)
+                    calib = calibrationVault(pokeMatrix,obj.modes,src.mask,slopesStats, varargin{:});
+                else
+                    calib = calibrationVault(pokeMatrix,obj.modes.modes,src.mask,slopesStats, varargin{:});
+                end
+            else
                 
                 %%% Tip-Tilt sensor calibration
                 
@@ -310,20 +413,20 @@ classdef deformableMirror < handle
                 zern = zernike(tel,2:3);
                 zern.c = eye(2)*calibDmStroke;%src.wavelength/4;
                 src = src.*zern;
-%                 buf = reshape(src.phase,tel.resolution,2*tel.resolution);
+                %                 buf = reshape(src.phase,tel.resolution,2*tel.resolution);
                 
                 % zernike projection onto DM influence functions
                 obj = obj\src;
-%                 src = src.*tel*obj;
+                %                 src = src.*tel*obj;
                 dmTtCoefs = obj.coefs;
-%                 
-%                 buf = [buf;reshape(src.phase,tel.resolution,2*tel.resolution)];
-%                 figure
-%                 imagesc(buf)
-%                 axis square
-%                 colorbar
+                %
+                %                 buf = [buf;reshape(src.phase,tel.resolution,2*tel.resolution)];
+                %                 figure
+                %                 imagesc(buf)
+                %                 axis square
+                %                 colorbar
                 
-%                 obj.coefs = dmTtCoefs;
+                %                 obj.coefs = dmTtCoefs;
                 src = src.*tel*obj*sensor;
                 pokeTipTilt = sensor.slopes/calibDmStroke;
                 calib = calibrationVault(pokeTipTilt);
@@ -338,7 +441,7 @@ classdef deformableMirror < handle
             %
             % out = fittingError(telAtm) computes the deformable mirror
             % fitting error variance in radian^2 for the given
-            % telescope+atmosphere system 
+            % telescope+atmosphere system
             % out = fittingError(telAtm,src) computes the deformable mirror
             % fitting error rms in meter for the given telescope+atmosphere
             % system
@@ -349,7 +452,7 @@ classdef deformableMirror < handle
             add(obj.log,obj,' Computing the fitting error ...')
             atm = telAtm.opticalAberration;
             atmWavelength  = atm.wavelength;
-            atm.wavelength = src.wavelength; 
+            atm.wavelength = src.wavelength;
             switch class(obj.modes)
                 case 'zernike'
                     out = zernikeStats.residualVariance(obj.modes.nMode,atm,telAtm);
@@ -364,12 +467,12 @@ classdef deformableMirror < handle
                     nCycle = roots([3,3,1-obj.nActuator/3]);
                     nCycle(nCycle<0) = [];
                     smallTel = telescope(telAtm.D*0.5/(nCycle-1));
-                    out = zernikeStats.residualVariance(3,atm,smallTel);                    
+                    out = zernikeStats.residualVariance(3,atm,smallTel);
             end
             atm.wavelength = atmWavelength;
             if nargin>3
                 out = 10^-unit*sqrt(out)/src.waveNumber;
-            end            
+            end
         end
         
         function varargout = imagesc(obj,varargin)
@@ -403,9 +506,9 @@ classdef deformableMirror < handle
         
         
     end
-        
+    
     methods (Static)
-            
+        
         function obj = loadobj(obj)
             %% LOADOBJ
             add(obj.log,obj,'Load!')
@@ -425,5 +528,5 @@ classdef deformableMirror < handle
         end
         
     end
-
+    
 end
