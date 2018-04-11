@@ -1,7 +1,7 @@
 classdef multiDeformableMirror < handle
     % DEFORMABLEMIRROR Create a stack of deformableMirror object at
     % different altitude
-
+    
     properties
         % number of DMs
         nDm;
@@ -19,15 +19,18 @@ classdef multiDeformableMirror < handle
         tag = 'N DEFORMABLE MIRROR';
         % The Poke Matrix
         thePokeMatrix;
-
+        % commands
+        coefs
+        %valid actuators
+        validActuators
     end
-
+    
     properties (Access=private)
         log;
     end
-
+    
     methods
-
+        
         %% Constructor
         function obj = multiDeformableMirror(zLocations,nActuators,tel,varargin)
             p = inputParser;
@@ -44,7 +47,7 @@ classdef multiDeformableMirror < handle
             addParameter(p,'offsets', [] , @isnumeric);
             addParameter(p,'diameters', [], @isnumeric);
             parse(p,zLocations,nActuators, tel, varargin{:});
-
+            
             obj.nDm = length(p.Results.nActuators);
             obj.zLocations =  p.Results.zLocations;
             obj.tel = p.Results.tel;
@@ -54,27 +57,31 @@ classdef multiDeformableMirror < handle
                 obj.overSampling = 2*ones(obj.nDm,1);
             end
             if isempty(p.Results.validActuators)
-                validAcuators = {};
+                validActuators = {};
                 for kDm = 1:obj.nDm
-                    validAcuators{kDm} = true(nActuators(kDm));
+                    validActuators{kDm} = true(nActuators(kDm));
                 end
             else
                 for kDm = 1:obj.nDm
-                    validAcuators{kDm} = p.Results.validActuators{kDm};
+                    validActuators{kDm} = p.Results.validActuators{kDm};
                 end
             end
-                    
+            
             for kDM = 1:obj.nDm
                 D_m = obj.tel.D + 2*obj.zLocations.*tan(0.5*obj.tel.fieldOfView);
-                do = obj.tel.D/(obj.tel.resolution-1);
-                layersNPixel = 1 + round(D_m./do);
+                if isempty(p.Results.resolution)
+                    do = obj.tel.D/(obj.tel.resolution-1);
+                    layersNPixel = 1 + round(D_m./do);
+                else
+                    layersNPixel = p.Results.resolution;
+                end
                 obj.dms{kDM} = deformableMirror(p.Results.nActuators(kDM),...
                     'modes',p.Results.modes(kDM),...
-                    'validActuator',validAcuators{kDM},...
+                    'validActuator',validActuators{kDM},...
                     'zLocation',obj.zLocations(kDM), ...
                     'resolution',layersNPixel(kDM));
-
-
+                
+                
                 %  'resolution',p.Results.resolutions(kDM),...
                 % 'validActuator',p.Results.validActuators(kDM),...
                 %,...
@@ -100,13 +107,31 @@ classdef multiDeformableMirror < handle
             checkOut(obj.log,obj)
         end
         
+        %% SETS AND GETS
+        function set.coefs(obj,val)
+            obj.coefs = [];
+            for kDm = 1:obj.nDm
+                if kDm == 1
+                    init = 1;
+                end
+                range = init:init-1+obj.dms{kDm}.nValidActuator;
+                if ~isscalar(val);
+                    obj.dms{kDm}.coefs = val(range ,1);
+                else
+                    obj.dms{kDm}.coefs = ones(length(range),1)*val;
+                end
+                obj.coefs = [obj.coefs; obj.dms{kDm}.coefs];
+                init = init + obj.dms{kDm}.nValidActuator;
+            end
+            
+        end
         function relay(obj,srcs)
             %% RELAY the stack of deformable mirror to source relay
             %
             % relay(obj,srcs) crops the phase of the deformableMirror stack
             % in the src directions and relay the corresponding phase into
             % the properties of the source object(s)
-
+            
             nSrc       = numel(srcs);
             wavenumber = 2*pi/srcs(1).wavelength;
             dmPhase = {};
@@ -172,7 +197,7 @@ classdef multiDeformableMirror < handle
                         % out(:,:,kLayer) = spline2(sampling,phase_m{kLayer},{u+yc,u+xc});
                         % size(linear(xs,ys,phase_m{kLayer},xi,yi))
                         % size(out(:,:,kLayer))
-        
+                        
                         out(:,:,kDm) = utilities.linear(xs,ys,phase_m{kDm},xi,yi);
                     end
                 end
@@ -184,7 +209,7 @@ classdef multiDeformableMirror < handle
                 srcs(kSrc).amplitude = 1;
             end
         end
-   
+        
         function displayActuatorLayout(obj,src)
             figure
             color = {'r','k','g','b','c'};
@@ -214,14 +239,28 @@ classdef multiDeformableMirror < handle
             end
         end
         
-        function setValidActuators(obj)
+        %% 
+        function validActuators = get.validActuators(obj)
             for kDm = 1:obj.nDm
-                validActuators = logical(abs(obj.dms{kDm}.modes.actuatorCoord)<(obj.tel.diameterAt(obj.dms{kDm}.zLocation)/2)*1.2);  
+                validActuators{kDm} = obj.dms{kDm}.validActuator;
+            end
+        end
+        %%
+        function setValidActuators(obj,val)
+            if nargin == 2
+                for kDm = 1:obj.nDm
+                    obj.dms{kDm}.validActuator = val{kDm};
+                end
+            else
+                validActuators = logical(abs(obj.dms{kDm}.modes.actuatorCoord)<(obj.tel.diameterAt(obj.dms{kDm}.zLocation)/2)*1.2);
                 obj.dms{kDm}.validActuator = validActuators;
             end
         end
+        function calibMultiDmCell = calibrationMultiDm(obj,sensor,srcs,calibDmStroke,steps,varargin)
+            calibMultiDmCell = calibration(obj,sensor,srcs,calibDmStroke,steps,varargin{:});
+        end
         
-       function calibMultiDmCell = calibration(obj,sensor,srcs,calibDmStroke,steps,varargin)
+        function calibMultiDmCell = calibration(obj,sensor,srcs,calibDmStroke,steps,varargin)
             nSrcs = numel(srcs);
             calibMultiDmCell = cell(obj.nDm,nSrcs);
             if nargin<5 || isempty(steps)

@@ -21,12 +21,12 @@ classdef fittingMatrix < handle
         %Optimal projector for MCAO at DM altitudes (fitting step)
         %Hopt;
         %Influence function of the dms;
-        FMatrix;
+        dmInfFuncMatrix;
         %Inverse Influence function of the dms;
         iFCell;
-        iFMatrix;
+        iDmInfFuncMatrix;
         %Command Matrix;
-        CommandMatrix;
+        commandMatrix;
         %Number of pixel for each Dm Layer
         layersNPixel;
         %Dm diameter
@@ -51,41 +51,46 @@ classdef fittingMatrix < handle
             obj.multiDm     = p.Results.multiDm;
             obj.modesLowRes = p.Results.modesLowRes;
             obj.optStars    = p.Results.optStars;
-            nStar               = numel(obj.optStars);
+            nStar           = numel(obj.optStars);
             obj.optWeight   = p.Results.optWeight;
             if isempty(obj.optWeight)
-                obj.optWeight = 1/nStar*ones(nStar,1);                                                                              
+                obj.optWeight = 1/nStar*ones(nStar,1);
             end
             obj.resolution = p.Results.resolution;
             if isempty(obj.resolution)
                 obj.resolution = (obj.mmse.nSub+1)*ones(obj.multiDm.nDm,1);
             end
             
-            nAtmLayer    = obj.mmse.atmModel.nLayer;
-            nDmLayer     = obj.multiDm.nDm;
-            Hss               = cell(nStar,nAtmLayer);
-            Hdm              = cell(nStar,nDmLayer);
-            obj.FMatrix      = [];
-            obj.iFMatrix     = [];
-            obj.iFCell       = cell(nDmLayer,1);
-            obj.layersNPixel = zeros(nDmLayer,1);
-            obj.D_m          = zeros(nDmLayer,1);
+            nAtmLayer           = obj.mmse.atmModel.nLayer;
+            nDmLayer            = obj.multiDm.nDm;
+            Hss                 = cell(nStar,nAtmLayer);
+            Hdm                 = cell(nStar,nDmLayer);
+            obj.dmInfFuncMatrix = [];
+            obj.iDmInfFuncMatrix= [];
+            obj.iFCell          = cell(nDmLayer,1);
+            obj.layersNPixel    = zeros(nDmLayer,1);
+            obj.D_m             = zeros(nDmLayer,1);
             nValidActuatorTotal = 0;
             
             for kDmLayer = 1:nDmLayer
-                dm = obj.multiDm.dms{kDmLayer};
-                actCoord = dm.modes.actuatorCoord;
+                dm              = obj.multiDm.dms{kDmLayer};
+                actCoord        = dm.modes.actuatorCoord;
                 obj.D_m(kDmLayer) = max(real(actCoord(:)))-min(real(actCoord(:)));
-                do = obj.mmse.dSub;
+                do              = obj.mmse.dSub;
                 obj.layersNPixel(kDmLayer) = round(obj.D_m(kDmLayer)./do)+1;
-                dmLowRes = deformableMirror(dm.nActuator,'modes',obj.modesLowRes(kDmLayer),...
-                'resolution',obj.layersNPixel(kDmLayer),...
-                'validActuator',dm.validActuator);
-                F = 2*dmLowRes.modes.modes;
-                obj.FMatrix = blkdiag(obj.FMatrix,F);
+                if isempty(obj.modesLowRes(kDmLayer).modes) 
+                    dmLowRes        = deformableMirror(dm.nActuator,'modes',obj.modesLowRes(kDmLayer),...
+                        'resolution',obj.layersNPixel(kDmLayer),...
+                        'validActuator',dm.validActuator);
+                    F = 2*dmLowRes.modes.modes;
+                else
+                    F = obj.modesLowRes(kDmLayer).modes;
+                end
+                
+                obj.dmInfFuncMatrix = blkdiag(obj.dmInfFuncMatrix,F);
                 iF = pinv(full(F));
                 obj.iFCell{kDmLayer,1} = iF;
-                obj.iFMatrix = blkdiag(obj.iFMatrix,iF);
+                obj.iDmInfFuncMatrix = blkdiag(obj.iDmInfFuncMatrix,iF);
                 nValidActuatorTotal = nValidActuatorTotal + dm.nValidActuator;
             end
             
@@ -94,7 +99,7 @@ classdef fittingMatrix < handle
             HdmAtmMean = sparse(nValidActuatorTotal,length(mmse.Hss(1,:)));
             %PdmMean    = sparse(resTotal,resTotal);
             %PdmAtmMean = sparse(resTotal,length(mmse.Hss(1,:)));
-
+            
             fprintf('___ BI-LINEAR INTERPOLATION OPERATOR ___\n')
             for kGs=1:nStar
                 %Hss propagator
@@ -131,23 +136,23 @@ classdef fittingMatrix < handle
                         real(obj.mmse.outputPhaseGrid)*scale+beta(1),...
                         imag(obj.mmse.outputPhaseGrid)*scale+beta(2));
                 end
-                intDM = obj.optWeight(kGs,1)*[Hdm{kGs,:}];
+                intDM = [Hdm{kGs,:}];
                 intL  = [Hss{kGs,:}];
-                HdmMean    = HdmMean    + (intDM*obj.FMatrix)'*(intDM*obj.FMatrix);
-                HdmAtmMean = HdmAtmMean +  (intDM*obj.FMatrix)'*intL;
-%                 HdmMean    = HdmMean    + obj.optWeight(kGs,1)*(intDM*obj.FMatrix)'*(intDM*obj.FMatrix);
-%                 HdmAtmMean = HdmAtmMean +  obj.optWeight(kGs,1)*(intDM*obj.FMatrix)'*intL;
+                HdmMean    = HdmMean    + (intDM*obj.dmInfFuncMatrix)'*(intDM*obj.dmInfFuncMatrix);
+                HdmAtmMean = HdmAtmMean +  (intDM*obj.dmInfFuncMatrix)'*intL;
+                %                 HdmMean    = HdmMean    + obj.optWeight(kGs,1)*(intDM*obj.dmInfFuncMatrix)'*(intDM*obj.dmInfFuncMatrix);
+                %                 HdmAtmMean = HdmAtmMean +  obj.optWeight(kGs,1)*(intDM*obj.dmInfFuncMatrix)'*intL;
                 %PdmMean    = PdmMean    +  intDM'*intDM;
                 %PdmAtmMean = PdmAtmMean +  intDM'*intL;
             end
-            %HdmMean    = HdmMean;
-            %HdmAtmMean = HdmAtmMeanr;
+            HdmMean    = HdmMean/nStar;
+            HdmAtmMean = HdmAtmMean/nStar;
             %PdmMean    = PdmMean/nStar;
             %PdmAtmMean = PdmAtmMean/nStar;
             obj.Hss  = Hss;
             obj.Hdm  = Hdm;
             %obj.Hopt = pinv(full(PdmMean)+1e-3*eye(resTotal))*PdmAtmMean;
-            obj.CommandMatrix = pinv(full(HdmMean),1)*HdmAtmMean;
+            obj.commandMatrix = pinv(full(HdmMean),1)*HdmAtmMean;
             
             % local function
             function P = p_bilinearSplineInterp(xo,yo,do,xi,yi)
