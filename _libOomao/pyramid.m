@@ -147,7 +147,7 @@ classdef pyramid < handle
                 fieldOfView   = size(pwfs.pyrMask, 1) * pwfs.src.wavelength / pwfs.tel.D / 2.; % FOV in the pyramid mask focal plane, assumed shannon sampling
                 if fieldOfView < sizeObjectMax
                     disp('###########################################################################')
-                    disp('WARNING - EXTENDED OBJECT SIZE LARGER THAN FOV - CASE NOT HANDLED - STOPING')
+                    disp('WARNING - EXTENDED OBJECT SIZE LARGER THAN FOV - CASE NOT HANDLED - STOPPING')
                     disp('###########################################################################')
                     keyboard
                 end
@@ -198,8 +198,8 @@ classdef pyramid < handle
             if ~exist('nTheta','var')
                 nTheta = pwfs.nTheta;
             end
-            pwfs.q   = zeros(pwfs.pxSide,pwfs.pxSide,nWave);
-            pwfs.I4Q4 = zeros(pwfs.pxSide,pwfs.pxSide,...
+            pwfs.q      = zeros(pwfs.pxSide,pwfs.pxSide,nWave);
+            pwfs.I4Q4   = zeros(pwfs.pxSide,pwfs.pxSide,...
                 nWave,nTheta); %
             if size(pwfs.object,2) > 1 && size(pwfs.fftPhasor, 3) ~= size(pwfs.object,2)  % user-defined object
                 makeFftPhasor(pwfs);
@@ -245,10 +245,10 @@ classdef pyramid < handle
                 axis square
                 pwfs.frameCalibration = pwfs_.camera.frame;
                 
-                idx = 1:length(pwfs.validDetectorPixels);
-                diff = length(idx)-pwfs.nLenslet;
-                idx = idx(diff/2+1:end-diff/2);
-                pwfs.setValidLenslet(pwfs.validDetectorPixels(idx,idx));
+                %idx = 1:length(pwfs.validDetectorPixels);
+                %diff = length(idx)-pwfs.nLenslet;
+                %idx = idx(diff/2+1:end-diff/2);
+                %pwfs.setValidLenslet(pwfs.validDetectorPixels(idx,idx));
             end
         end
         
@@ -281,7 +281,7 @@ classdef pyramid < handle
             %                 pwfs.validLenslet = pwfs.validDetectorPixels(idx,idx);
             %
             %             end
-            
+            pwfs.validSlopes = [pwfs.validLenslet pwfs.validLenslet];
         end
         %% Get and Set alpha
         function out = get.alpha(pwfs)
@@ -308,8 +308,8 @@ classdef pyramid < handle
             pwfs.pxSide = pwfs.resolution*2*pwfs.p_c;
             makePyrMask(pwfs);
             setvalidDetectorPixels(pwfs);
-            setValidLenslet(pwfs);
-            pwfs.validSlopes = [pwfs.validDetectorPixels pwfs.validDetectorPixels];
+            setValidLenslet(pwfs, pwfs.validDetectorPixels);
+            
         end
         
         %% Get and Set binning
@@ -652,7 +652,7 @@ classdef pyramid < handle
                         %                         z=0;    % distance [??m]
                         %                         fresnelFourier = gpuArray(fftshift(exp(1i * 2 * pi * (z/lambda) * phasor)));
                         %pwfs.fpIm = 0;
-                        if pwfs.extendedObject == 0 % Case parallel workers, single object
+                        if pwfs.extendedObject == 0 % Case point-source object
                             
                             for kTheta = 1:pwfs.nTheta
                                 theta = (kTheta-1)*2*pi/pwfs.nTheta;
@@ -704,6 +704,9 @@ classdef pyramid < handle
                                 buf = bsxfun(@times,qGpu(:,:,kMode),pwfs.fftPhasor); % multiplication by phasor => adds a tip-tilt in a pupil plane
                                 
                                 buf = bsxfun(@times,fft2(buf),pyrMaskGpu);
+                                amplitudeSource = sqrt(reshape([pwfs.object.nPhoton] * pwfs.tel.area * pwfs.tel.samplingTime, [1 1 pwfs.object(1).nSrc]));
+                                buf = bsxfun(@times, buf, amplitudeSource);
+                                
                                 if pwfs.viewFocalPlane % visualisation of the pyramid focal plane
                                     pwfs.fpIm = (sum(abs(buf).^2,3));
                                     figure(6666)
