@@ -1606,113 +1606,113 @@ classdef shackHartmann < hgsetget
             
         end
         
-%         %% generate the LGS elongated spot objects as seen by every subaperture 
-%         function  o = generateElongatedKernel(obj,tel,lgs, binningFactor)
-%             % L.Blanco 02/28/2017 Modified to remove kernels fft
-%             % computations
-%             
-%             %[o fftO] = generateElongatedKernel(obj,tel,lgs, binningFactor)
-%             nSources =length([lgs(1,:,1).zenith]);
-%             obj.camera.binningFactor = binningFactor;
-%             %compute max elongation to create kernel array o
-%             dH = [lgs(:,1,:).height] - [lgs(:,1,:).objectiveFocalLength];
-%             d = tel.D/obj.lenslets.nLenslet;
-%             pixelScale = lgs(1).wavelength/d/2*obj.lenslets.nyquistSampling;
-%             % maxElong = ceil(max(abs(tel.D*((dH)./([lgs(:,1,:).height].^2+[lgs(:,1,:).height].*dH))/pixelScale)));
-%             maxElong = ceil(max(abs(tel.D*((dH)./([lgs(:,1,:).height] .* [lgs(1).objectiveFocalLength]))/pixelScale)));
-%             
-%             if nSources > 1 % recursive call in case of multiple LGS
-%                 for iSrc = 1:nSources
-%                     a = tic;
-%                     o = generateElongatedKernel(obj,tel,lgs(1,iSrc,:), binningFactor);
-%                     % [o, fftO] = generateElongatedKernel(obj,tel,lgs(1,iSrc,:), binningFactor);
-%                     obj.spotsLgsSrcKernel(:,:,:,iSrc) = o;
-%                     % obj.fftSpotsLgsSrcKernel(:,:,:,iSrc) = fftO;
-%                     obj.camera.spotsLgsSrcKernel(:,:,:,iSrc) = o;
-%                     % obj.camera.fftSpotsLgsSrcKernel(:,:,:,iSrc) = fftO;
-%                     toc(a)
+        %% generate the LGS elongated spot objects as seen by every subaperture 
+        function  o = generateElongatedKernel(obj,tel,lgs, binningFactor)
+            % L.Blanco 02/28/2017 Modified to remove kernels fft
+            % computations
+            
+            %[o fftO] = generateElongatedKernel(obj,tel,lgs, binningFactor)
+            nSources =length([lgs(1,:,1).zenith]);
+            obj.camera.binningFactor = binningFactor;
+            %compute max elongation to create kernel array o
+            dH = [lgs(:,1,:).height] - [lgs(:,1,:).objectiveFocalLength];
+            d = tel.D/obj.lenslets.nLenslet;
+            pixelScale = lgs(1).wavelength/d/2*obj.lenslets.nyquistSampling;
+            % maxElong = ceil(max(abs(tel.D*((dH)./([lgs(:,1,:).height].^2+[lgs(:,1,:).height].*dH))/pixelScale)));
+            maxElong = ceil(max(abs(tel.D*((dH)./([lgs(:,1,:).height] .* [lgs(1).objectiveFocalLength]))/pixelScale)));
+            
+            if nSources > 1 % recursive call in case of multiple LGS
+                for iSrc = 1:nSources
+                    a = tic;
+                    o = generateElongatedKernel(obj,tel,lgs(1,iSrc,:), binningFactor);
+                    % [o, fftO] = generateElongatedKernel(obj,tel,lgs(1,iSrc,:), binningFactor);
+                    obj.spotsLgsSrcKernel(:,:,:,iSrc) = o;
+                    % obj.fftSpotsLgsSrcKernel(:,:,:,iSrc) = fftO;
+                    obj.camera.spotsLgsSrcKernel(:,:,:,iSrc) = o;
+                    % obj.camera.fftSpotsLgsSrcKernel(:,:,:,iSrc) = fftO;
+                    toc(a)
+                end
+            end
+            p = [lgs.nPhoton]/sum([lgs.nPhoton]); % flux from Na profile          
+            xL = lgs(1).viewPoint(1);
+            yL = lgs(1).viewPoint(2);
+            d = tel.D/obj.lenslets.nLenslet;
+            uLenslet = linspace(-1,1,obj.lenslets.nLenslet)*(tel.D/2-d/2);
+            [xLenslet,yLenslet] = meshgrid(uLenslet);
+%             maskLenslet = obj.validLenslet;
+%             xLenslet = xLenslet(maskLenslet);
+%             yLenslet = yLenslet(maskLenslet);
+            xx = xLenslet(:)-xL;
+            yy = yLenslet(:)-yL;
+            pixelScale = lgs(1).wavelength/d/2*obj.lenslets.nyquistSampling;
+            dH = [lgs.height] - [lgs.objectiveFocalLength];
+            %sx = xx*((dH)./([lgs.height].^2+[lgs.height].*dH))/pixelScale; % relative horizontal shifts due to vertical elongation
+            %sy = yy*((dH)./([lgs.height].^2+[lgs.height].*dH))/pixelScale; % relative vertical shifts due to vertical elongation
+            
+            sx = -xx*((dH)./([lgs.height] .* [lgs.objectiveFocalLength]))/pixelScale; % relative horizontal shifts due to vertical elongation
+            sy = -yy*((dH)./([lgs.height] .* [lgs.objectiveFocalLength]))/pixelScale; % relative vertical shifts due to vertical elongation
+            sx(isnan(sx)) = 0; % in case we have a point source in z (dH=Nan in that case which creates an error)
+            sy(isnan(sy)) = 0; % in case we have a point source in z (dH=Nan in that case which creates an error)
+            if isempty(lgs(1).extent)
+                ps = zeros(4);
+                ps(2,2) = 1;
+            else
+                ps = lgs(1).extent;
+                ps = lamTools.crop(ps, 32);
+%                 if mod(size(ps, 1),2) == 1
+%                     ps = ps(2:end, 2:end); % even number of pixels in src.extent
 %                 end
-%             end
-%             p = [lgs.nPhoton]/sum([lgs.nPhoton]); % flux from Na profile          
-%             xL = lgs(1).viewPoint(1);
-%             yL = lgs(1).viewPoint(2);
-%             d = tel.D/obj.lenslets.nLenslet;
-%             uLenslet = linspace(-1,1,obj.lenslets.nLenslet)*(tel.D/2-d/2);
-%             [xLenslet,yLenslet] = meshgrid(uLenslet);
-% %             maskLenslet = obj.validLenslet;
-% %             xLenslet = xLenslet(maskLenslet);
-% %             yLenslet = yLenslet(maskLenslet);
-%             xx = xLenslet(:)-xL;
-%             yy = yLenslet(:)-yL;
-%             pixelScale = lgs(1).wavelength/d/2*obj.lenslets.nyquistSampling;
-%             dH = [lgs.height] - [lgs.objectiveFocalLength];
-%             %sx = xx*((dH)./([lgs.height].^2+[lgs.height].*dH))/pixelScale; % relative horizontal shifts due to vertical elongation
-%             %sy = yy*((dH)./([lgs.height].^2+[lgs.height].*dH))/pixelScale; % relative vertical shifts due to vertical elongation
-%             
-%             sx = -xx*((dH)./([lgs.height] .* [lgs.objectiveFocalLength]))/pixelScale; % relative horizontal shifts due to vertical elongation
-%             sy = -yy*((dH)./([lgs.height] .* [lgs.objectiveFocalLength]))/pixelScale; % relative vertical shifts due to vertical elongation
-%             sx(isnan(sx)) = 0; % in case we have a point source in z (dH=Nan in that case which creates an error)
-%             sy(isnan(sy)) = 0; % in case we have a point source in z (dH=Nan in that case which creates an error)
-%             if isempty(lgs(1).extent)
-%                 ps = zeros(4);
-%                 ps(2,2) = 1;
-%             else
-%                 ps = lgs(1).extent;
-%                 ps = lamTools.crop(ps, 32);
-% %                 if mod(size(ps, 1),2) == 1
-% %                     ps = ps(2:end, 2:end); % even number of pixels in src.extent
-% %                 end
-%             end
-%             
-%             %expand the kernel size to avoid circularization when shifting
-%             maxElong(isnan(maxElong)) = 0;
-%             nPxElong = size(ps, 1) + 2 * maxElong;
-%             nPxElong = 4 * binningFactor * ceil(nPxElong / (4*binningFactor));
-% %             twos = 2.^linspace(1,10,10);
-% %             nPxElong = twos(find( (abs(nPxElong-twos)) == min(abs(nPxElong-twos))));
-%             ps = lamTools.crop(ps, nPxElong);
-%             
-%             %binning to match detector sampling
-%             %binningFactor = obj.lenslets.nLensletsImagePx ./ obj.camera.resolution(1);
-%             nPxElong = nPxElong / binningFactor; % the spot kernels are generated using the WFS binning value (vs lenslet pixels)
-%                         
-%             o = zeros([nPxElong nPxElong obj.lenslets.nLenslet^2]);
-%             % unbinnedO = zeros(length(ps));
-%             % fftO = zeros([nPxElong nPxElong obj.lenslets.nLenslet^2]);
-%             nLenslets = obj.lenslets.nLenslet^2;
-%             lgsHeight = [lgs.height];
-%             lgsExtent = lgs(1).extent;
-%             parfor iLenslet = 1:nLenslets
-%                 unbinnedO = zeros(length(ps));
-%                 for iHeight = 1:length(lgsHeight)
-%                     if isempty(lgsExtent) % no lateral extensioon of the source
-%                         %o(:,:,iLenslet) = o(:,:,iLenslet) + p(iHeight) .* lamTools.shift(ps,sx(iLenslet,iHeight), sy(iLenslet,iHeight));
-%                         defaultShift = 0;
-%                         shiftedKernel = lamTools.shift(ps,sx(iLenslet,iHeight)+defaultShift, sy(iLenslet,iHeight)+defaultShift);
-%                         shiftedKernel = shiftedKernel .* (shiftedKernel>0);
-%                         o(:,:,iLenslet) = o(:,:,iLenslet) + utilities.binning(p(iHeight) .* shiftedKernel, [nPxElong,nPxElong]);
-%                     else % non-zero lateral extension of the source
-%                         defaultShift = 0;
-%                         shiftedKernel = lamTools.shift(ps,sx(iLenslet,iHeight)+defaultShift, sy(iLenslet,iHeight)+ defaultShift);
-%                         shiftedKernel = shiftedKernel .* (shiftedKernel>=0);
-%                         %o(:,:,iLenslet) = o(:,:,iLenslet) + p(iHeight) .* lamTools.shift(ps,sx(iLenslet,iHeight)-0.5, sy(iLenslet,iHeight)-0.5);
-%                         %o(:,:,iLenslet) = o(:,:,iLenslet) + utilities.binning(p(iHeight) .* shiftedKernel, [nPxElong,nPxElong]);
-%                         unbinnedO = unbinnedO + p(iHeight) .* shiftedKernel;
-%                         % fftO(:,:,iLenslet) = fftO(:,:,iLenslet) + fftshift(fft2(utilities.binning(p(iHeight) .* shiftedKernel, [nPxElong,nPxElong]), nPxElong*2, nPxElong*2));
-%                     end
-%                 end
-%                 o(:,:,iLenslet) = utilities.binning(unbinnedO, [nPxElong,nPxElong]);
-%                 % fftO(:,:,iLenslet) = fftshift(fft2(o(:,:,iLenslet), nPxElong, nPxElong));
-%             end
-%             
-%             if isempty(obj.spotsLgsSrcKernel)
-%                 obj.spotsLgsSrcKernel = o;
-%                 % obj.fftSpotsLgsSrcKernel = fftO;
-%                 obj.camera.spotsLgsSrcKernel = o;
-%                 % obj.camera.fftSpotsLgsSrcKernel = fftO;
-%                 obj.lenslets.convKernel = 'true';
-%             end
-%         end
+            end
+            
+            %expand the kernel size to avoid circularization when shifting
+            maxElong(isnan(maxElong)) = 0;
+            nPxElong = size(ps, 1) + 2 * maxElong;
+            nPxElong = 4 * binningFactor * ceil(nPxElong / (4*binningFactor));
+%             twos = 2.^linspace(1,10,10);
+%             nPxElong = twos(find( (abs(nPxElong-twos)) == min(abs(nPxElong-twos))));
+            ps = lamTools.crop(ps, nPxElong);
+            
+            %binning to match detector sampling
+            %binningFactor = obj.lenslets.nLensletsImagePx ./ obj.camera.resolution(1);
+            nPxElong = nPxElong / binningFactor; % the spot kernels are generated using the WFS binning value (vs lenslet pixels)
+                        
+            o = zeros([nPxElong nPxElong obj.lenslets.nLenslet^2]);
+            % unbinnedO = zeros(length(ps));
+            % fftO = zeros([nPxElong nPxElong obj.lenslets.nLenslet^2]);
+            nLenslets = obj.lenslets.nLenslet^2;
+            lgsHeight = [lgs.height];
+            lgsExtent = lgs(1).extent;
+            parfor iLenslet = 1:nLenslets
+                unbinnedO = zeros(length(ps));
+                for iHeight = 1:length(lgsHeight)
+                    if isempty(lgsExtent) % no lateral extensioon of the source
+                        %o(:,:,iLenslet) = o(:,:,iLenslet) + p(iHeight) .* lamTools.shift(ps,sx(iLenslet,iHeight), sy(iLenslet,iHeight));
+                        defaultShift = 0;
+                        shiftedKernel = lamTools.shift(ps,sx(iLenslet,iHeight)+defaultShift, sy(iLenslet,iHeight)+defaultShift);
+                        shiftedKernel = shiftedKernel .* (shiftedKernel>0);
+                        o(:,:,iLenslet) = o(:,:,iLenslet) + utilities.binning(p(iHeight) .* shiftedKernel, [nPxElong,nPxElong]);
+                    else % non-zero lateral extension of the source
+                        defaultShift = 0;
+                        shiftedKernel = lamTools.shift(ps,sx(iLenslet,iHeight)+defaultShift, sy(iLenslet,iHeight)+ defaultShift);
+                        shiftedKernel = shiftedKernel .* (shiftedKernel>=0);
+                        %o(:,:,iLenslet) = o(:,:,iLenslet) + p(iHeight) .* lamTools.shift(ps,sx(iLenslet,iHeight)-0.5, sy(iLenslet,iHeight)-0.5);
+                        %o(:,:,iLenslet) = o(:,:,iLenslet) + utilities.binning(p(iHeight) .* shiftedKernel, [nPxElong,nPxElong]);
+                        unbinnedO = unbinnedO + p(iHeight) .* shiftedKernel;
+                        % fftO(:,:,iLenslet) = fftO(:,:,iLenslet) + fftshift(fft2(utilities.binning(p(iHeight) .* shiftedKernel, [nPxElong,nPxElong]), nPxElong*2, nPxElong*2));
+                    end
+                end
+                o(:,:,iLenslet) = utilities.binning(unbinnedO, [nPxElong,nPxElong]);
+                % fftO(:,:,iLenslet) = fftshift(fft2(o(:,:,iLenslet), nPxElong, nPxElong));
+            end
+            
+            if isempty(obj.spotsLgsSrcKernel)
+                obj.spotsLgsSrcKernel = o;
+                % obj.fftSpotsLgsSrcKernel = fftO;
+                obj.camera.spotsLgsSrcKernel = o;
+                % obj.camera.fftSpotsLgsSrcKernel = fftO;
+                obj.lenslets.convKernel = 'true';
+            end
+        end
         
         function varargout = theoreticalNoise(obj,tel,atm,gs,ss,varargin)
             %% THEORETICALNOISE WFS theoretical noise
@@ -2112,10 +2112,15 @@ classdef shackHartmann < hgsetget
             Ox_in  = u*tipStep*constants.radian2arcsec;
             Ox_out = sx*ngs.wavelength/d/2*constants.radian2arcsec;
 
-            
-            plot(u*tipStep/pixelScale,(u*tipStep/pixelScale)./sx);
+            plot(Ox_in, Ox_out)
+            hold 
+            plot(Ox_in, Ox_in,'k:')
+            xlabel('input')
+            ylabel('output')
+            %plot(u*tipStep/pixelScale,(u*tipStep/pixelScale)./sx);
             
             slopesLinCoef = polyfit(Ox_in,Ox_out,1);
+            title(['gain = ' num2str(1/slopesLinCoef(1))])
             obj.slopesUnits = 1/slopesLinCoef(1);
             ngs.zenith = 0;
             obj.pointingDirection = [];

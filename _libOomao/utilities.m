@@ -77,7 +77,7 @@ classdef utilities
             else
                 out = bsxfun( @minus, data, mean(data(mask(:))) );
                 out = bsxfun( @times, out, mask );
-            end               
+            end
         end
         
         function varargout = cartAndPol(u,varargin)
@@ -127,7 +127,8 @@ classdef utilities
             
             if isempty(v)
                 if numel(u)==1
-                    u = linspace(-1,1,u);%2*( -(u-1)/2:(u-1)/2 )/u;
+                    %u = linspace(-1,1,u);%2*( -(u-1)/2:(u-1)/2 )/u;
+                    u = 2*( -(u-1)/2:(u-1)/2 )/u;
                 end
                 v=u;
             elseif (numel(u)==1) && (numel(v)==1)
@@ -354,7 +355,7 @@ classdef utilities
             %% SINC Sinus cardinal function
             %
             % out = sinc(x) computes sin(pi*x)/(pi*x)
-           
+            
             out = ones(size(x));
             u = x~=0;
             x = x(u);
@@ -375,7 +376,7 @@ classdef utilities
         
         function out = binning(frame,outRes)
             %% BINNING Frame binning
-            % 
+            %
             % out = binning(frame,[n,m]) bins the frame pixels into a nXm
             % array; frame can be either a single frame or a data cube
             
@@ -493,9 +494,9 @@ classdef utilities
             % Compute the focal point relative position [meter] for the
             % Zernike (Noll normalized) focus coefficients [radian], the
             % focalLength [meter], the beam diameter [meter] and the
-            % wavelength [meter] 
+            % wavelength [meter]
             %
-            % out = defocusDistance(a4,focalLength,diameter,wavelength,unit) 
+            % out = defocusDistance(a4,focalLength,diameter,wavelength,unit)
             % The result is converted into the appropriate unit: 3, 0, -3,
             % -6, -9 for example correspond to km, m, mm, micron, nm,
             % respectively
@@ -509,7 +510,7 @@ classdef utilities
         end
         
         function out = outOfFocus(delta,focalLength,diameter,wavelength,unit)
-            % OUTOFFOCUS Zernike focus for a focal point deplacement 
+            % OUTOFFOCUS Zernike focus for a focal point deplacement
             %
             % out = outOfFocus(delta,focalLength,diameter,wavelength)
             % Compute the Zernike (Noll normalized) focus coefficients
@@ -592,7 +593,7 @@ classdef utilities
             f = reshape(1:6*nSegment,6,nSegment);
             figure(nSegment)
             hp = patch('Faces',f','Vertices',[real(v(:)),imag(v(:))],'FaceColor',[1,1,1]*0.8);
-%             line(real(center),imag(center),'color','r','marker','.')
+            %             line(real(center),imag(center),'color','r','marker','.')
             axis square
             set(gca,'ylim',get(gca,'xlim'))
             title(sprintf('%d segments',nSegment))
@@ -605,7 +606,7 @@ classdef utilities
             % the diagonal of the matrix B. B is a sparse matrix.
             
             B = repmat( {sparse(A)} , 1 , n);
-            B = blkdiag( B{:} ); 
+            B = blkdiag( B{:} );
         end
         
         function V = gramSchmidt(V)
@@ -621,7 +622,7 @@ classdef utilities
                 for i=1:j-1
                     u = V(:,i);
                     v = v - u*(u'*v)*(u'*u);
-                end                
+                end
                 V(:,j) = v/norm(v);
                 waitbar(j/k)
             end
@@ -629,7 +630,7 @@ classdef utilities
         end
         
         function out = besselJDerivative(nu,x)
-            %% BESSELJDERIVATIVE Derivative of Bessel function of the first kind 
+            %% BESSELJDERIVATIVE Derivative of Bessel function of the first kind
             %
             % out = besselJDerivative(nu,x) computes the derivative of the
             % Bessel function of the first kind of order n at x
@@ -639,11 +640,11 @@ classdef utilities
         end
         
         function s = besselJDerivativeRoots(nu,ns)
-           %% BESSELJDERIVATIVEROOUTS Roots of the drivative of Bessel function of the first kind 
-           %
-           % s = besselJDerivativeRoots(nu,ns) computes the ns first roots
-           % of the derivative of the Bessel function of the first kind of
-           % order n
+            %% BESSELJDERIVATIVEROOUTS Roots of the drivative of Bessel function of the first kind
+            %
+            % s = besselJDerivativeRoots(nu,ns) computes the ns first roots
+            % of the derivative of the Bessel function of the first kind of
+            % order n
             
             bjd = @(x) tools.besselJDerivative(nu,abs(x));
             s = zeros(1,ns);
@@ -667,19 +668,19 @@ classdef utilities
                 s(ks) = fzero( bjd , [x0,x1]);
             end
             
-%             figure(103)
-%             fplot( bjd, [0,ceil(s(end))])
-%             grid
-%             line( s, zeros(size(s)), 'color','r','marker','.','linestyle','none')
-
+            %             figure(103)
+            %             fplot( bjd, [0,ceil(s(end))])
+            %             grid
+            %             line( s, zeros(size(s)), 'color','r','marker','.','linestyle','none')
+            
         end
-
+        
         function rc = fitFwhm(profile)
             C = contourc(profile/max(profile(:)),[0.5,0.5]);
             rr = hypot(C(1,2:end),C(2,2:end));
             xc = sum(rr.*C(1,2:end))./sum(rr);
             yc = sum(rr.*C(2,2:end))./sum(rr);
-%             line(xc,yc,'color','r','marker','x')
+            %             line(xc,yc,'color','r','marker','x')
             rc = mean(sqrt((C(1,2:end)-xc).^2 + (C(2,2:end)-yc).^2));
         end
         
@@ -716,12 +717,12 @@ classdef utilities
             
             scale = delta/(delta_p*(N-1));
             s = ( scale.*(ii + (1-Ni)*0.5) + 0.5 ) * (N-1);
-            t = ( scale.*(jj + (1-Ni)*0.5) + 0.5 ) * (N-1); 
+            t = ( scale.*(jj + (1-Ni)*0.5) + 0.5 ) * (N-1);
             fs = floor(s);
             ft = floor(t);
             
             ndx = ft + fs*N;
-                        
+            
             idx      = s==(N-1);
             s        = s - fs;
             s(idx)   = s(idx) + 1;
@@ -734,7 +735,7 @@ classdef utilities
             
             onems = 1 - s;
             onemt = 1 - t;
-                        
+            
             rows = ii*Ni + jj;
             rows = 1 + reshape( ...
                 [ rows          ; rows     ; rows    ; rows    ], [] ,1);
@@ -745,6 +746,21 @@ classdef utilities
             m_B = sparse(rows,cols,values,Ni^2,N^2);
         end
         
+        function fr = gaussianC(resolution,fwhm)
+            % delivers a gaussian 2D, centered between 4 pixels (similar to
+            % gaussian)
+            
+            
+            u = (0:resolution-1)-(resolution)/2 + 0.5;
+            [x,y] = meshgrid(u);
+            r = hypot(x,y);
+            sig = fwhm./(2.*sqrt(2*log(2)));
+            f = exp(-r.^2/(2*sig.^2));
+            fr = f/sum(f(:));
+            
+        end
+        
+        
         function fr = gaussian(resolution,fwhm,n_f)
             
             u = (0:resolution-1)-(resolution)/2;
@@ -754,7 +770,7 @@ classdef utilities
             f = exp(-r.^2/(2*sig.^2));
             f = f/sum(f(:));
             
-%             n_f = 20;
+            %             n_f = 20;
             if nargin<3
                 n_f = resolution;
             end
@@ -846,7 +862,7 @@ classdef utilities
             target = sqrt(focalPlaneImage);
             A = fftshift( ifft2( fftshift( target ) ) );
             phaseA = pi*(rand(size(source))*2-1);
-%             figure,imagesc(abs(A))
+            %             figure,imagesc(abs(A))
             n = length(source);
             nIteration = 300;
             kIteration = 0;
@@ -1145,7 +1161,7 @@ classdef utilities
                 otherwise
                     error('fft dim must be < 3')
             end
-                        
+            
         end
         
         function out = oneParameterExample2(mu,alpha,q,p,a,nmax)
@@ -1188,10 +1204,197 @@ classdef utilities
             
             out = sum( a1 + a2 , 2);
             out = out./(sqrt(pi)*gamma(p));
-            out = reshape( out, size_a);            
+            out = reshape( out, size_a);
             
         end
         
+        function t = toeplitz(c,r)
+            % this version works on numeric vector as well as on cells vector
+            r = r(:);                               % force column structure
+            p = length(r);
+            m = length(c);
+            x = [r(p:-1:2) ; c(:)];                 % build vector of user data
+            cidx = uint16(0:m-1)';
+            ridx = uint16(p:-1:1);
+            subscripts = cidx(:,ones(p,1)) + ridx(ones(m,1),:);  % Toeplitz subscripts
+            t = x(subscripts);                                   % actual data
+        end
+        
+        function [map,num] = covMatrix2Map(mat,n1,n2,varargin)
+            %% convert covariance Matrix to covariance Map
+            
+            inputs = inputParser;
+            inputs.addRequired('mat',@ismatrix);
+            inputs.addRequired('n1',@isnumeric);
+            inputs.addRequired('n2',@isnumeric);
+            inputs.addParameter('mask1', [], @islogical );
+            inputs.addParameter('mask2', [], @islogical );
+            inputs.parse(mat,n1,n2,varargin{:});
+            
+            mask1 = inputs.Results.mask1;
+            if isempty(mask1)
+                mask1 = true(n1);
+            end
+            mask2 = inputs.Results.mask2;
+            if isempty(mask2)
+                mask2 = true(n2);
+            end
+            
+            n = n1+n2-1;
+            T = cell(n,1);
+            for k=1:n
+                T{k} = tools.toeplitz(n2:-1:1,n2:n)+n*(k-1);
+            end
+            T = cell2mat(tools.toeplitz(T(n2:-1:1),T(n2:n)));
+            T(~mask2(:),:) = [];
+            T(:,~mask1(:)) = [];
+            map = zeros(n);
+            num = zeros(n);
+            for k=1:length(T(:))
+                map(T(k))=map(T(k))+mat(k);
+                num(T(k))=num(T(k))+1;
+            end
+            num(num==0)=1;
+            map=map./num;
+            
+        end
+        
+        function mat = covMap2Matrix(map,n1,n2,varargin)
+            %% convert covariance Map to covariance Matrix
+            
+            inputs = inputParser;
+            inputs.addRequired('mat',@ismatrix);
+            inputs.addRequired('n1',@isnumeric);
+            inputs.addRequired('n2',@isnumeric);
+            inputs.addParameter('mask1', [], @islogical );
+            inputs.addParameter('mask2', [], @islogical );
+            inputs.parse(map,n1,n2,varargin{:});
+            
+            mask1 = inputs.Results.mask1;
+            if isempty(mask1)
+                mask1 = true(n1);
+            end
+            mask2 = inputs.Results.mask2;
+            if isempty(mask2)
+                mask2 = true(n2);
+            end
+            
+            n = n1+n2-1;
+            T = mat2cell(map,n,ones(1,n));
+            c = cellfun(@(x) x(n2:-1:1),T,'UniformOutput',false);
+            r = cellfun(@(x) x(n2:n),T,'UniformOutput',false);
+            T=cellfun(@(x,y) tools.toeplitz(x,y),c,r,'UniformOutput',false);
+            T=tools.toeplitz(T(n2:-1:1),T(n2:n));
+            mat = cell2mat(T);
+            
+            mat(~mask2(:),:) = [];
+            mat(:,~mask1(:)) = [];
+            
+        end
+        
+        function map=tipTiltFilter4covMap(map,nSub,mask)
+            %% Filtering tip/tilt in slope covariance map
+            
+            n = 2*nSub-1;
+            ave = ifft2(fft2(map).*fft2(mask,n,n));
+            ave = ave(nSub:end,nSub:end)/sum(mask(:));
+            ave = ave(mask);
+            aveall = mean(ave);
+            ave = bsxfun(@(x,y) -x-y+aveall,ave',ave(end:-1:1));
+            map=map+tools.covMatrix2Map(ave,nSub,nSub,'mask1',mask,'mask2',mask);
+            
+        end
+        
+        function map=slopeModeFilter4covMap(map,nSub,mask1,mask2,X,Y,mode)
+            %% Filtering zernike modes in covariance map
+            
+            n = 2*nSub-1;
+            
+            zer1 = zernike(1:max(mode),'resolution',nSub,'pupil',mask1);
+            switch X
+                case 'x'
+                    z1 = sum(zer1.xDerivative(:,mode),2);
+                case 'y'
+                    z1 = sum(zer1.yDerivative(:,mode),2);
+            end
+            z1 = reshape(z1,nSub,nSub);
+            ave1 = ifft2(fft2(map).*fft2(z1,n,n));
+            ave1 = ave1(nSub:end,nSub:end)/sum(z1(:).^2);
+            z1 = z1(mask1);
+            ave1 = ave1(mask1);
+            
+            zer2 = zernike(1:max(mode),'resolution',nSub,'pupil',mask2);
+            switch Y
+                case 'x'
+                    z2 = sum(zer2.xDerivative(:,mode),2);
+                case 'y'
+                    z2 = sum(zer2.yDerivative(:,mode),2);
+            end
+            z2 = reshape(z2,nSub,nSub);
+            ave2 = ifft2(fft2(rot90(map,2)).*fft2(z2,n,n));
+            ave2 = ave2(nSub:end,nSub:end)/sum(z2(:).^2);
+            z2 = z2(mask2);
+            ave2 = ave2(mask2);
+            aveall = z2'*ave1/sum(z2.^2);
+            aveall = z2*aveall*z1';
+            ave1 = ave1*z1';
+            ave2 = z2*ave2';
+            
+            filter = -ave1-ave2+aveall;
+            map=map+tools.covMatrix2Map(filter,nSub,nSub,'mask1',mask1,'mask2',mask1);
+            
+        end
+        function F = linear(arg1,arg2,arg3,arg4,arg5)
+            %LINEAR 2-D bilinear data interpolation.
+            %   ZI = LINEAR(EXTRAPVAL,X,Y,Z,XI,YI) uses bilinear interpolation to
+            %   find ZI, the values of the underlying 2-D function in Z at the points
+            %   in matrices XI and YI.  Matrices X and Y specify the points at which
+            %   the data Z is given.  X and Y can also be vectors specifying the
+            %   abscissae for the matrix Z as for MESHGRID. In both cases, X
+            %   and Y must be equally spaced and monotonic.
+            %
+            %   Values of EXTRAPVAL are returned in ZI for values of XI and YI that are
+            %   outside of the range of X and Y.
+            %
+            %   If XI and YI are vectors, LINEAR returns vector ZI containing
+            %   the interpolated values at the corresponding points (XI,YI).
+            %
+            %   ZI = LINEAR(EXTRAPVAL,Z,XI,YI) assumes X = 1:N and Y = 1:M, where
+            %   [M,N] = SIZE(Z).
+            %
+            %   ZI = LINEAR(EXTRAPVAL,Z,NTIMES) returns the matrix Z expanded by
+            %   interleaving bilinear interpolates between every element, working
+            %   recursively for NTIMES. LINEAR(EXTRAPVAL,Z) is the same as
+            %   LINEAR(EXTRAPVAL,Z,1).
+            %
+            %   See also INTERP2, CUBIC.
+            
+            [nrows,ncols] = size(arg3);
+            %     mx = numel(arg1); my = numel(arg2);
+            s = 1 + (arg4-arg1(1))/(arg1(end)-arg1(1))*(ncols-1);
+            t = 1 + (arg5-arg2(1))/(arg2(end)-arg2(1))*(nrows-1);
+            
+            
+            % Matrix element indexing
+            ndx = floor(t)+floor(s-1)*nrows;
+            
+            % Compute intepolation parameters, check for boundary value.
+            if isempty(s), d = s; else d = find(s==ncols); end
+            s(:) = (s - floor(s));
+            if ~isempty(d), s(d) = s(d)+1; ndx(d) = ndx(d)-nrows; end
+            
+            % Compute intepolation parameters, check for boundary value.
+            if isempty(t), d = t; else d = find(t==nrows); end
+            t(:) = (t - floor(t));
+            if ~isempty(d), t(d) = t(d)+1; ndx(d) = ndx(d)-1; end
+            
+            % Now interpolate.
+            onemt = 1-t;
+            F =  ( arg3(ndx).*(onemt) + arg3(ndx+1).*t ).*(1-s) + ...
+                ( arg3(ndx+nrows).*(onemt) + arg3(ndx+(nrows+1)).*t ).*s;
+            
+            
+        end
     end
-
+    
 end

@@ -26,6 +26,8 @@ classdef calibrationVault < handle
         % updateShow
         updateShow = true;
         noshow     = false;
+        % slopes statistics computed during the poke matrix calculation
+        slopesStats; 
     end
     
     properties (Dependent)
@@ -54,23 +56,26 @@ classdef calibrationVault < handle
             
             p = inputParser;
             addRequired(p,'calibMatrix', @isnumeric);
-            addOptional(p,'modes', [], @isnumeric)
+            addOptional(p,'modes', [], @isnumeric);
             addOptional(p,'pupil', [], @(x) isnumeric(x) || islogical(x))
             addParameter(p,'noshow', false, @islogical);
-            addParameter(p,'cond', [], @isnumeric )
+            addParameter(p,'cond', [], @isnumeric );
+            addOptional(p,'slopesStats',[],@isnumeric );
             parse(p,calibMatrix, varargin{:});
             obj.D      = p.Results.calibMatrix;
             m_modes = p.Results.modes;
             pupil   = p.Results.pupil;
             obj.noshow = p.Results.noshow;
-            if ~isempty(m_modes)
+            obj.slopesStats = p.Results.slopesStats;
+            
+            if ~isempty(m_modes) && size(m_modes,1)==size(pupil(:),1)
                 obj.modes  = bsxfun( @times, m_modes, pupil(:) );
             end
             obj.log    = logBook.checkIn(obj);
             
             add(obj.log,obj,'Computing the SVD of the calibration matrix!')
             
-            [obj.U,S,obj.V] = svd(calibMatrix,0);
+            [obj.U,S,obj.V] = svd(calibMatrix,'econ');
             obj.eigenValues = diag(S);
             
             iS = diag(1./obj.eigenValues);
@@ -157,6 +162,33 @@ classdef calibrationVault < handle
 
         end
         
+        %% Show eigen modes
+        function showMode(obj,modes,colorscale)
+            
+            if nargin==2
+                colorscale=1;
+            end
+            
+            add(obj.log,obj,sprintf('Showing eigen modes from %d to %d',modes(1),modes(end)));
+            
+            nModes = numel(modes);
+            figure;
+            t=0;
+            for k=1:nModes
+                t = t + 1;
+                subplot(3,7,t);
+                map=tools.toggleFrame(obj.modes*obj.V(:,modes(k)));
+                h = imagesc(map,[min(map(:)) max(map(:))]*colorscale);
+                h.Parent.XTick = '';
+                h.Parent.YTick = '';
+                axis equal tight xy;
+                title(sprintf('%4d : %.0f',modes(k),obj.eigenValues(1)/obj.eigenValues(modes(k))));
+                if t==21 && k~=nModes
+                   t=0;
+                   figure;
+                end
+            end
+        end
     end
     
     methods (Access=private)
@@ -165,7 +197,11 @@ classdef calibrationVault < handle
             %% UPDATECOMMANDMATRIX Update the command matrix
             
             if ~obj.noshow && obj.updateShow 
-            figure(get(obj.eigAxis,'parent'))
+            try
+                figure(get(obj.eigAxis,'parent'))
+            catch
+                obj.show;
+            end
 %             if isempty(obj.eigLine)
 %                 obj.eigLine = line(get(obj.eigAxis,'xlim'),ones(1,2)*obj.p_threshold,'color','r','parent',obj.eigAxis);
 %             else
