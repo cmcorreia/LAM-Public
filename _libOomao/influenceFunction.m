@@ -22,6 +22,8 @@ classdef influenceFunction < handle
         modes
         % actuators coordinates
         actuatorCoord;
+        % condition for influence function centring
+        influenceCentre;
         % influence function tag
         tag = 'BEZIER INFLUENCE FUN';
     end
@@ -48,12 +50,17 @@ classdef influenceFunction < handle
     methods
         
         %% Constructor
-        function obj = influenceFunction(points,mech)
+        function obj = influenceFunction(points,mech,influenceCentre)
+            
+            if ~exist('influenceCentre','var')
+                influenceCentre = 0;
+            end
+                
             obj.p_P = zeros(7,2);
             obj.p_P(1,:) = [0,1];
             obj.p_P(2,2) = 1;
             obj.p_P(6,2) = 0;
-            obj.p_P(7,:) = [2,0];
+            obj.p_P(7,:) = [2,0]; % first value gives the span in units of DM pitches
             if ischar(points)
                 switch points
                     case 'overshoot'
@@ -63,6 +70,7 @@ classdef influenceFunction < handle
                 end
             end
             obj.mechCoupling = mech;
+            obj.influenceCentre = influenceCentre;
             obj.P = points;
             obj.bezierListener = addlistener(obj,'bezier','PostSet',...
                 @(src,evnt) obj.show );
@@ -99,7 +107,7 @@ classdef influenceFunction < handle
             obj.p_P(4,:) = val{3};
             obj.p_P(5,:) = (-1/val{4})*obj.p_P(3,:)+(1+1/val{4})*obj.p_P(4,:);
             obj.p_P(6,1) = val{5};
-            t = linspace(0,1,101)';
+            t = linspace(0,1,101)'; % hard-coded number of points subject to optimisation
             obj.bezier = ...
                 ((1-t).^3)*obj.p_P(1,:) + ...
                 3.*((1-t).^2.*t)*obj.p_P(2,:) + ...
@@ -250,7 +258,7 @@ classdef influenceFunction < handle
             end
         end
         
-        function setInfluenceFunction(obj,nIF,resolution,validActuator,ratioTelDm,offset)
+        function setInfluenceFunction(obj,nIF,resolution,validActuator,ratioTelDm,offset,diameter)
             %% SETINFLUENCEFUNCTION
             
             %             if nargin<5
@@ -259,12 +267,23 @@ classdef influenceFunction < handle
             %             z = linspace(-1,1,nIF)*(nIF-1)/2;
             if isempty(obj.actuatorCoord)
                 
-                xIF = linspace(-1,1,nIF)*(nIF-1)/2 - offset(1);
-                yIF = linspace(-1,1,nIF)*(nIF-1)/2 - offset(2);
-                [xIF2,yIF2] = ndgrid(xIF,yIF);
-                obj.actuatorCoord = xIF2 + 1i*yIF2;
+
+                if obj.influenceCentre==0
+                    xIF = linspace(-1,1,nIF)*(nIF-1)/2 - offset(1);
+                    yIF = linspace(-1,1,nIF)*(nIF-1)/2 - offset(2);
+                    [xIF2,yIF2] = ndgrid(xIF,yIF);
+                    obj.actuatorCoord = xIF2 + 1i*yIF2;
+                    
+                    u0 = ratioTelDm.*linspace(-1,1,resolution)*(nIF-1)/2;%s*(resolution-1)/resolution; % index actual pixel coordinates means 1/2 pixel squeeze the u0 vector
+                else
+                    xIF = 1:nIF;
+                    yIF = 1:nIF;
+                    [xIF2,yIF2] = ndgrid(xIF,yIF);
+                    obj.actuatorCoord = xIF2 + 1i*yIF2;
+                    
+                    u0 = 1:nIF;
+                end
                 
-                u0 = ratioTelDm.*linspace(-1,1,resolution)*(nIF-1)/2;
                 
                 nValid = sum(validActuator(:));
                 kIF = 0;
@@ -304,7 +323,7 @@ classdef influenceFunction < handle
                 kIF = 1:nValid;
                 wv = sparse(wv(:,iIF(kIF)));
                 wu = sparse(wu(:,jIF(kIF)));
-               fprintf(' @(influenceFunction)> Computing the 2D DM zonal modes... (%4d,    \n',nValid)
+                fprintf(' @(influenceFunction)> Computing the 2D DM zonal modes... (%4d,    \n',nValid)
                 for kIF = 1:nValid % parfor doesn't work with sparse matrix!
                     fprintf('\b\b\b\b%4d',kIF)
                     buffer = wv(:,kIF)*wu(:,kIF)';
@@ -317,23 +336,32 @@ classdef influenceFunction < handle
                 xIF = real(obj.actuatorCoord(:)');
                 yIF = imag(obj.actuatorCoord(:)');
                 
-                u0 = linspace(-1,1,resolution)*max(abs(obj.actuatorCoord(:)));
-                
+                %u0 = linspace(-1,1,resolution)*max(abs(obj.actuatorCoord(:))); % deprecated
+                if ~isempty(diameter)
+                    u0 = linspace(-1,1,resolution)*diameter/2; % normalised by the equivalent optical diameter of the DM
+                else
+                    u0 = linspace(-1,1,resolution)*max(xIF); % normalised by max of the x coordinate of the DM
+                end
                 nValid = sum(validActuator(:));
                 kIF = 0;
                 
                 u = bsxfun( @minus , u0' , xIF );
                 wu = zeros(resolution,nIF);
                 index_u = u >= -obj.bezier(end,1) & u <= obj.bezier(end,1);
-%                 nu = sum(index_u(:));
+                %                 nu = sum(index_u(:));
                 wu(index_u) = ppval(obj.splineP,u(index_u));
                 
-                v = bsxfun( @minus , u0' , yIF);
-                wv = zeros(resolution,nIF);
-                index_v = v >= -obj.bezier(end,1) & v <= obj.bezier(end,1);
-%                 nv = sum(index_v(:));
-                wv(index_v) = ppval(obj.splineP,v(index_v));
-                expectedNnz = max(sum(index_u))*max(sum(index_v))*nIF;
+                if ~isempty(diameter)
+                    u0 = linspace(-1,1,resolution)*diameter/2; % normalised by the equivalent optical diameter of the DM
+                else
+                    u0 = linspace(-1,1,resolution)*max(yIF); % normalised by max of the y coordinate of the DM
+                end           
+            v = bsxfun( @minus , u0' , yIF);
+            wv = zeros(resolution,nIF);
+            index_v = v >= -obj.bezier(end,1) & v <= obj.bezier(end,1);
+            %                 nv = sum(index_v(:));
+            wv(index_v) = ppval(obj.splineP,v(index_v));
+            expectedNnz = max(sum(index_u))*max(sum(index_v))*nIF;
                 add(obj.log,obj,sprintf('Expected non-zeros: %d',expectedNnz))
                 add(obj.log,obj,sprintf('Computing the %d 2D DM zonal modes...',nValid))
 %                 m_modes = spalloc(resolution^2,nValid,expectedNnz);
