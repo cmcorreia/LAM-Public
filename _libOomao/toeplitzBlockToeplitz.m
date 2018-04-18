@@ -12,7 +12,9 @@ classdef toeplitzBlockToeplitz < handle
        mu;
        xi;
        na;
+       nU;
        inverse;
+       isFlip;
 	   tag = 'Toeplitz-Block-Toeplitz';
     end
     
@@ -22,12 +24,29 @@ classdef toeplitzBlockToeplitz < handle
 
     methods
         
-        function obj = toeplitzBlockToeplitz(nmBlock, blockNM,T)
+        function obj = toeplitzBlockToeplitz(nmBlock, blockNM, T, varargin)
+            
+            inputs = inputParser;
+            inputs.addRequired('nmBlock', @isnumeric);
+            inputs.addRequired('blockNM', @isnumeric);
+            inputs.addRequired('T', @isnumeric);
+            inputs.addOptional('isFlip', true, @islogical);     
+            inputs.parse(nmBlock, blockNM, T, varargin{:});
+            
             obj.nBlockRow = nmBlock(1);
             obj.nBlockCol = nmBlock(2);
             obj.nRow      = blockNM(1);
             obj.nCol      = blockNM(2);
-            obj.elements  = T(end:-1:1,end:-1:1);
+            
+            % Added by Y.O to compensate a difference in a definition of
+            % covariance map.
+            % If you use "slopesLinearMMSE.m", "isFlip" should be true.
+            obj.isFlip = inputs.Results.isFlip;
+            if obj.isFlip
+                obj.elements  = T(end:-1:1,end:-1:1);
+            else
+                obj.elements  = T;
+            end
             
             a = obj.elements;
             a = a(:);
@@ -46,6 +65,8 @@ classdef toeplitzBlockToeplitz < handle
             xi_ = (m+n)*(m+n-1) - j1*(m+n-1) - j2;
             obj.xi = xi_'+1;
 
+            obj.nU = (obj.nBlockRow+obj.nBlockCol-1)*(obj.nRow+obj.nCol-1);
+            
             obj.log = logBook.checkIn(obj);
             %display(obj)
         end
@@ -114,13 +135,36 @@ classdef toeplitzBlockToeplitz < handle
         
         function out = mtimes(obj,b)
             % c = T*b multiplies the matrix by the vector b
-            nU = (obj.nBlockRow+obj.nBlockCol-1)*(obj.nRow+obj.nCol-1);
-            U = zeros(nU,1);            
+            %nU = (obj.nBlockRow+obj.nBlockCol-1)*(obj.nRow+obj.nCol-1);
+            %U = zeros(nU,1);       
+            U = zeros(obj.nU,1);
             U(obj.mu(:)) = b;
             P = ifft(obj.elementsFT.*fft(U,obj.na));
             out = P(obj.xi(:));
         end
         
+        function out = mtimesFast(obj,fU)
+            out = obj.elementsFT.*fU;
+        end
+        
+        function out = mtimesFast2(obj,b)
+            % c = T*b multiplies the matrix by the vector b
+            %nU = (obj.nBlockRow+obj.nBlockCol-1)*(obj.nRow+obj.nCol-1);
+            %U = zeros(nU,1);       
+            U = zeros(obj.nU,1);
+            U(obj.mu(:)) = b;
+            out = obj.elementsFT.*fft(U,obj.na);
+        end
+        
+        function out = invMtimes(obj,b)
+            % c = T*b multiplies the matrix by the vector b
+            %nU = (obj.nBlockRow+obj.nBlockCol-1)*(obj.nRow+obj.nCol-1);
+            %U = zeros(nU,1);       
+            U = zeros(obj.nU,1);
+            U(obj.mu(:)) = b;
+            P = ifft(1./obj.elementsFT.*fft(U,obj.na));
+            out = P(obj.xi(:));
+        end
         function out = mldivide(obj,c)
             % b = T\c solves Tb = c
             if isempty(obj.inverse)
@@ -143,7 +187,9 @@ classdef toeplitzBlockToeplitz < handle
         function out = maskedMtimes(obj,b,mask)
             out = mask.*mtimes(obj,b);
         end
-        
+            function out = invMaskedMtimes(obj,b,mask)
+            out = mask.*invMtimes(obj,b);
+        end    
 %         function out = size(obj,idx)
 %             out = [obj.nBlockRow*obj.nRow,obj.nBlockCol*obj.nCol];
 %             if nargin>1
