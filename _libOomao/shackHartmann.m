@@ -632,12 +632,12 @@ classdef shackHartmann < hgsetget
                 fprintf('Matched filter algorithm\n')
                 if isempty(obj.matchedFilterR) % no offline matched filter
                     I0 = reshape(buffer(:, floor(length(obj.validLenslet)/2)+1), nPxLenslet, nPxLenslet);
-                    Gx = lamTools.crop( (lamTools.shift(I0, 1, 0) - I0) / 1, nPxLenslet);
-                    Gy = lamTools.crop( (lamTools.shift(I0, 0, 1) - I0) / 1, nPxLenslet);
-                    Ixp = lamTools.shift(I0, 1, 0);
-                    Ixm = lamTools.shift(I0,-1, 0);
-                    Iyp = lamTools.shift(I0, 0, 1);
-                    Iym = lamTools.shift(I0, 0,-1);
+                    Gx = utilities.crop( (utilities.shift(I0, 1, 0) - I0) / 1, nPxLenslet);
+                    Gy = utilities.crop( (utilities.shift(I0, 0, 1) - I0) / 1, nPxLenslet);
+                    Ixp = utilities.shift(I0, 1, 0);
+                    Ixm = utilities.shift(I0,-1, 0);
+                    Iyp = utilities.shift(I0, 0, 1);
+                    Iym = utilities.shift(I0, 0,-1);
                     H = [Gx(:) Gy(:) I0(:) Ixp(:) Ixm(:) Iyp(:) Iym(:)];
                     M = [...
                         1 0 0 1 -1 0  0
@@ -858,7 +858,7 @@ classdef shackHartmann < hgsetget
                 % L. Blanco 2017/01/02
 %                 if ~isempty(obj.lenslets.elongatedFieldStopSize)
 %                     nCrop = obj.lenslets.fieldStopSize * 2 * obj.lenslets.nyquistSampling;
-%                     buffer = lamTools.crop(buffer, nCrop);
+%                     buffer = utilities.crop(buffer, nCrop);
 %                     nLenslet = size(buffer, 3);
 %                     nRows = sqrt(nLenslet);
 %                     croppedPicture = zeros(nCrop*nRows);
@@ -1658,7 +1658,7 @@ classdef shackHartmann < hgsetget
                 ps(2,2) = 1;
             else
                 ps = lgs(1).extent;
-                ps = lamTools.crop(ps, 32);
+                ps = utilities.crop(ps, 32);
 %                 if mod(size(ps, 1),2) == 1
 %                     ps = ps(2:end, 2:end); % even number of pixels in src.extent
 %                 end
@@ -1670,7 +1670,7 @@ classdef shackHartmann < hgsetget
             nPxElong = 4 * binningFactor * ceil(nPxElong / (4*binningFactor));
 %             twos = 2.^linspace(1,10,10);
 %             nPxElong = twos(find( (abs(nPxElong-twos)) == min(abs(nPxElong-twos))));
-            ps = lamTools.crop(ps, nPxElong);
+            ps = utilities.crop(ps, nPxElong);
             
             %binning to match detector sampling
             %binningFactor = obj.lenslets.nLensletsImagePx ./ obj.camera.resolution(1);
@@ -1686,16 +1686,16 @@ classdef shackHartmann < hgsetget
                 unbinnedO = zeros(length(ps));
                 for iHeight = 1:length(lgsHeight)
                     if isempty(lgsExtent) % no lateral extensioon of the source
-                        %o(:,:,iLenslet) = o(:,:,iLenslet) + p(iHeight) .* lamTools.shift(ps,sx(iLenslet,iHeight), sy(iLenslet,iHeight));
+                        %o(:,:,iLenslet) = o(:,:,iLenslet) + p(iHeight) .* utilities.shift(ps,sx(iLenslet,iHeight), sy(iLenslet,iHeight));
                         defaultShift = 0;
-                        shiftedKernel = lamTools.shift(ps,sx(iLenslet,iHeight)+defaultShift, sy(iLenslet,iHeight)+defaultShift);
+                        shiftedKernel = utilities.shift(ps,sx(iLenslet,iHeight)+defaultShift, sy(iLenslet,iHeight)+defaultShift);
                         shiftedKernel = shiftedKernel .* (shiftedKernel>0);
                         o(:,:,iLenslet) = o(:,:,iLenslet) + utilities.binning(p(iHeight) .* shiftedKernel, [nPxElong,nPxElong]);
                     else % non-zero lateral extension of the source
                         defaultShift = 0;
-                        shiftedKernel = lamTools.shift(ps,sx(iLenslet,iHeight)+defaultShift, sy(iLenslet,iHeight)+ defaultShift);
+                        shiftedKernel = utilities.shift(ps,sx(iLenslet,iHeight)+defaultShift, sy(iLenslet,iHeight)+ defaultShift);
                         shiftedKernel = shiftedKernel .* (shiftedKernel>=0);
-                        %o(:,:,iLenslet) = o(:,:,iLenslet) + p(iHeight) .* lamTools.shift(ps,sx(iLenslet,iHeight)-0.5, sy(iLenslet,iHeight)-0.5);
+                        %o(:,:,iLenslet) = o(:,:,iLenslet) + p(iHeight) .* utilities.shift(ps,sx(iLenslet,iHeight)-0.5, sy(iLenslet,iHeight)-0.5);
                         %o(:,:,iLenslet) = o(:,:,iLenslet) + utilities.binning(p(iHeight) .* shiftedKernel, [nPxElong,nPxElong]);
                         unbinnedO = unbinnedO + p(iHeight) .* shiftedKernel;
                         % fftO(:,:,iLenslet) = fftO(:,:,iLenslet) + fftshift(fft2(utilities.binning(p(iHeight) .* shiftedKernel, [nPxElong,nPxElong]), nPxElong*2, nPxElong*2));

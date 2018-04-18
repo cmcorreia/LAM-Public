@@ -2,7 +2,43 @@ classdef utilities
     % UTILITIES Collection of various useful functions
     
     methods (Static)
-        
+        %% crops the central portion of a square matrix, zero pads a square matrix to extend it
+        function out = crop(input, ncrop)
+            nFrames = size(input,3);
+            dim = size(input, 1);
+            out = zeros(ncrop, ncrop, nFrames);
+            for iFrame = 1:nFrames
+                if ncrop < dim
+                    deb = round((dim - ncrop) / 2 + 1);
+                    fin = round((dim + ncrop) / 2);
+                    out(:,:,iFrame) = input(deb:fin, deb:fin, iFrame);
+                else
+                    deb = round((ncrop-dim) / 2 + 1);
+                    fin = round((ncrop+dim) / 2);
+                    out(deb:fin, deb:fin, iFrame) = input(:,:,iFrame);
+                end
+            end
+        end
+        %% subpixel shift by known amount
+        function out = shift(im,x,y)
+            %             subx = x-round(x);
+            %             suby = y-round(y);
+            %             im = circshift(im, round([x, y]));
+            %             im = conv2(im, [subx, 1-subx], 'same');
+            %             out = conv2(im, [suby, 1-suby], 'same');
+            [nPx, nPy] = size(im);
+            [X, Y] = meshgrid(1:nPx, 1:nPy);
+            out = interp2(X, Y, im, X-x, Y-y, 'cubic', 0);
+            
+            %             [nPx, nPy] = size(im);
+            %             amp = fftshift(abs(fft2(im,nPx*2,nPy*2)));
+            %             [X, Y] = meshgrid(linspace(-1, 1, nPx*2), linspace(-1, 1, nPy*2));
+            %             eField = amp .* exp(1i * (-X*pi*x-Y*pi*y));
+            %             out = fftshift(abs(fft2(eField)));
+            %             out = out(nPx/2+1:nPx/2+nPx, nPy/2+1:nPy/2+nPy);
+            %             out = out*sum(im(:))/sum(out(:));
+        end
+        %%
         function out = piston(Npx,varargin)
             %% PISTON piston mode
             %
