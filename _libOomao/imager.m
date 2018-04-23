@@ -100,7 +100,8 @@ classdef imager < detector
 %             end
               readOut(obj,obj.imgLens.imagelets)
               if obj.frameCount==0 && obj.startDelay==0
-                  flush(obj,length(src))
+                  %flush(obj,length(src))
+                  flush(obj)
               end
         end
         
@@ -119,8 +120,9 @@ classdef imager < detector
                 
                 [n1,n2] = size(obj.referenceFrame);%n = length(obj.referenceFrame);
                 m_frame = obj.frame/nFrame;
+                m_frame = reshape(m_frame, size(m_frame,1), size(m_frame,2)*size(m_frame,3));
                 nf = [nSrc size(m_frame,2)/n2]; %nf = size(m_frame)/n;
-                m_frame = mat2cell( m_frame , n1, n2*ones(1,nf(2))); % m_frame = mat2cell( m_frame , n*ones(1,nf(1)), n*ones(1,nf(2)));
+                m_frame = mat2cell( m_frame , n1, n2*ones(1,nf(2))*size(m_frame,3)); % m_frame = mat2cell( m_frame , n*ones(1,nf(1)), n*ones(1,nf(2)));
                 
                 obj.strehl = zeros(nf);% obj.strehl = zeros(1,length(m_frame));
                 if ~isempty(obj.eeWidth)
