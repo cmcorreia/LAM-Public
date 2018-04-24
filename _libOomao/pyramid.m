@@ -329,7 +329,7 @@ classdef pyramid < handle
             nElements            = 2*obj.nLenslet+1; % Linear number of lenslet+actuator
             validLensletActuator = zeros(nElements);
             index                = 2:2:nElements; % Lenslet index
-            validLensletActuator(index,index) = obj.validLenslet;
+            validLensletActuator(index,index) = flipud(fliplr(obj.validLenslet));
             for xLenslet = index
                 for yLenslet = index
                     if validLensletActuator(xLenslet,yLenslet)==1
