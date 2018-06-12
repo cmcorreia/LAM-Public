@@ -45,6 +45,7 @@ classdef pyramid < handle
         pixelGains = 1;             % camera pixel gains
         extendedObject = 0;         % flag for extended object
         fftPhasor = 1;              % pre-computation of the fftPhasor for the extended object case
+        useLinearIntensityLightMap=0;% use the physical-optics pyramidTransform model or instead a linear approximation (cf O. Fauvarque)
     end
     properties(GetAccess = 'public', SetAccess = 'private')
         validActuator;              % map of validActuators [default at corners of sub-apertures]
@@ -118,6 +119,7 @@ classdef pyramid < handle
             addParameter(p,'viewFocalPlane',0)
             addParameter(p,'object',source, @(x) isa(x,'source') );
             addParameter(p,'extendedObject',0,@isnumeric);
+            addParameter(p,'useLinearIntensityLightMap',0,@isnumeric);
             parse(p,nLenslet,resolution,varargin{:})
             
             pwfs.isInternalCalibrationPWFS= p.Results.isInternalCalibrationPWFS;
@@ -141,6 +143,7 @@ classdef pyramid < handle
             pwfs.wvlRange               = p.Results.wvlRange;
             pwfs.viewFocalPlane         = p.Results.viewFocalPlane;
             pwfs.extendedObject         = p.Results.extendedObject;
+            pwfs.useLinearIntensityLightMap = p.Results.useLinearIntensityLightMap;
             
             if pwfs.extendedObject % CHECK for object size versus FOV on the pyramid
                 sizeObjectMax = max([pwfs.object.zenith]) * 2; % maximum size of object in radians on sky
@@ -253,13 +256,18 @@ classdef pyramid < handle
         end
         
         %% Get and Set validLenslet
-        function setValidLenslet(pwfs,val)
+        function setValidLenslet(pwfs,val,nL)
             
             % Sets indices validLenslet for compatibility with other
             % functions for shackHartmann etc.  This gives the valid
             % lenslet/pixel pupil over a grid of nLenslet X nLenslet
             % dimensions.
-            if nargin==2
+            if nargin == 3 %select only the nLenslet central pixels
+                idx = 1:length(pwfs.validDetectorPixels);
+                diff = length(idx)-nL;
+                idx = idx(diff/2+1:end-diff/2);
+                pwfs.validLenslet = pwfs.validDetectorPixels(idx,idx);
+            elseif nargin==2
                 
                 pwfs.validLenslet = logical(val);
                 
@@ -308,7 +316,7 @@ classdef pyramid < handle
             pwfs.pxSide = pwfs.resolution*2*pwfs.p_c;
             makePyrMask(pwfs);
             setvalidDetectorPixels(pwfs);
-            setValidLenslet(pwfs, pwfs.validDetectorPixels);
+            setValidLenslet(pwfs, pwfs.validDetectorPixels,pwfs.nLenslet);
             
         end
         
@@ -383,7 +391,11 @@ classdef pyramid < handle
                     pwfs.wvlRange = wvl;
                 end
             end
-            pyramidTransform(pwfs,src.catWave);
+            if pwfs.useLinearIntensityLightMap
+                linearSlopes(pwfs,src.catWave);
+            else
+                pyramidTransform(pwfs,src.catWave);
+            end
             grab(pwfs.camera,pwfs.lightMap);% wfs=pyramid(nLenslet,nPx,'modulation',modul);
             dataProcessing(pwfs);
         end
@@ -577,6 +589,56 @@ classdef pyramid < handle
             
         end
         
+        %% O. Fauvarque's meta-intensity linear model
+        function linearIntensity = linearSlopes(pwfs,wave,object)
+            
+            [n1,n2,n3] = size(wave);
+            nWave = n2*n3/n1;
+            
+            fft2c       = @(x) fft2_centre(x,1);
+            ifft2c      = @(x) (fft2_centre(x,-1));
+                        
+            nPxOut      = size(pwfs.pyrMask,1);
+            nPx         = size(pwfs.pupil,1);    
+            
+            if isempty(pwfs.pupil)
+                disp('CANNOT CONTINUE, WFS NEEDS A PUPIL\n')
+            end
+            % modulation signal
+            pupilExtended = padarray(pwfs.pupil,[ nPxOut-nPx, nPxOut - nPx]/2,'both')/sum(pwfs.pupil(:));
+            if pwfs.modulation == 0
+                pupil2 = utilities.piston(2*4*pwfs.modulation+2, nPxOut);
+            else
+                pupil2 = utilities.piston(2*4*pwfs.modulation+1, nPxOut);
+            end
+            pupil1 = utilities.piston(2*4*pwfs.modulation-1, nPxOut);
+            modulationPupil = pupil2 - pupil1;
+            modulationPupil = modulationPupil/sum(modulationPupil(:));
+            if nargin == 2
+                weightSignal = ifft2c(pupilExtended.*fft2c(modulationPupil));% /nPxOut^2;
+            elseif nargin == 3
+                weightSignal = ifft2c(pupilExtended.*fft2c(conv2(modulationPupil,object,'same')));% /nPxOut^2;
+            end
+            weightSignal = weightSignal*nnz(pupilExtended); %sum(weightSignal(:)) = 1
+            
+            
+            % FFT of the transparency mask
+            mHat = fftshift(fft2(fftshift(pwfs.pyrMask)));
+            
+            % impulse response functions
+            %IR = 2*imag(conj(mHat).*conv2(mHat,pwfs.pupil,'same'));
+            IRm = -2*imag(conj(mHat).*fft2c((pwfs.pyrMask).*conj(weightSignal))); % this conj here is needed to improve match btw slopes from linear and full physical optics model
+            
+            linearIntensity = zeros(nPxOut, nPxOut, nWave);
+            for z = 1:nWave
+                linearIntensity(:,:,z) = conv2(IRm,-angle(wave(:,:,z)),'same');
+            end
+            
+            pwfs.lightMap = linearIntensity;
+            grab(pwfs.camera,pwfs.lightMap);% wfs=pyramid(nLenslet,nPx,'modulation',modul);
+            dataProcessing(pwfs);
+
+        end
     end
     
     methods (Access=private)
@@ -626,8 +688,15 @@ classdef pyramid < handle
                                 %drawnow
                             end
                             pwfs.I4Q4(:,:,:) = bsxfun(@plus,pwfs.I4Q4(:,:,:), abs(fft2(buf)).^2);
+                            if pwfs.viewFocalPlane
+                                pwfs.fpIm = pwfs.fpIm + fftshift(sum(abs(buf).^2,3));
+                                imagesc(pwfs.fpIm);
+                                drawnow
+                                hold on
+                            end
                         end
                         I4Q = pwfs.I4Q4/pwfs.nTheta;
+                        
                         toc
                     else
                         % 2/ WITH GPU ACCELERATION
