@@ -73,7 +73,7 @@ classdef shackHartmann < hgsetget
         zernCoefsListener
         % zernCoefs handle
         zernCoefsHandle
-        % sub-aperture dependent elongation convolution kernel 
+        % sub-aperture dependent elongation convolution kernel
         spotsLgsSrcKernel = [];
         % sub-aperture dependent elongation convolution kernel in Fourier
         % domain
@@ -86,6 +86,12 @@ classdef shackHartmann < hgsetget
         matchedFilterR = [];
         % number of brightest pixels
         nBrightestPixels = 20;
+        % sets the display ON or OFF (useful for cluster execution)
+        graphicalDisplay = 0;
+        % rotated subaperture frame
+        rotatedFrame = false;
+        % rotation angles (subaperture dependant)
+        theta = 0;
     end
     
     properties (SetAccess=private)
@@ -239,15 +245,27 @@ classdef shackHartmann < hgsetget
             end
         end
         
-        function display(obj)
+        function display(obj,ngs,tel)
             %% DISPLAY Display object informations
             %
             % display(obj) prints information about the Shack-Hartmann
             % wavefront sensor object
+            %
+            % display(obj,ngs,tel) provides information about the lenslet (numerical) and detector
+            % pixel scale
             
             fprintf('___ %s ___\n',obj.tag)
             fprintf(' Shack-Hartmann wavefront sensor: \n  . %d lenslets total on the pupil\n  . %d pixels per lenslet \n',...
                 obj.nValidLenslet,obj.camera.resolution(1)/obj.lenslets.nLenslet)
+            if nargin > 2
+                d   = tel.D/size(obj.validLenslet,1);
+                ps = obj.lenslets.pixelScale(ngs,tel);
+                fprintf('   . The current lenslet pixel-scale is %4.2f mas\n',ps.convert('mas')) % sampling of the electic field
+                binFactor = 2*obj.lenslets.fieldStopSize/obj.lenslets.nyquistSampling/(obj.camera.resolution(1)/obj.lenslets.nLenslet);
+                lo2DInMas = ngs.wavelength/(2*d)*constants.radian2mas;
+                fprintf('   . The current detector pixel-scale is %4.2f mas\n',lo2DInMas*binFactor); % sky-angle of the detector pixels after binning
+            end
+            
             if isinf(obj.framePixelThreshold)
                 algoProp = ', no thresholding!';
             else
@@ -399,7 +417,7 @@ classdef shackHartmann < hgsetget
                 catch ME
                     fprintf( '@(shackHartmann)> %s\n',ME.identifier)
                     obj.indexRasterLenslet ...
-                        = utilities.rearrange([nPx,mPx],[nPxLenslet,mPxLenslet]);
+                        = tools.rearrange([nPx,mPx],[nPxLenslet,mPxLenslet]);
                     v = ~obj.validLenslet(:);
                     v = repmat(v,nLensletArray,1);
                     obj.indexRasterLenslet(:,v) = [];
@@ -488,7 +506,7 @@ classdef shackHartmann < hgsetget
                 fprintf( '@(shackHartmann)> Setting the raster index \n')
                 % get lenslet index
                 obj.indexRasterLenslet ...
-                    = utilities.rearrange([nPx,mPx/nLensletArray,nLensletArray*nFrame],[nPxLenslet,mPxLenslet]);
+                    = tools.rearrange([nPx,mPx/nLensletArray,nLensletArray*nFrame],[nPxLenslet,mPxLenslet]);
                 % remove index from non-valid lenslets
                 v = ~obj.validLenslet(:);
                 v = repmat(v,nLensletArray,1);
@@ -502,8 +520,8 @@ classdef shackHartmann < hgsetget
             % Buffer pre-processing
             buffer     = obj.camera.frame(obj.indexRasterLenslet);
             buffer = (buffer - obj.flatField)./obj.pixelGains;
-            if isscalar(obj.centroidingMask) || isempty(obj.centroidingMask) 
-                buffer = bsxfun( @times, obj.centroidingMask(:) , buffer); 
+            if isscalar(obj.centroidingMask) || isempty(obj.centroidingMask)
+                buffer = bsxfun( @times, obj.centroidingMask(:) , buffer);
             else
                 if mPx == nPx
                     buffer = reshape(buffer, [mPxLenslet.^2, obj.nValidLenslet, nFrame]);
@@ -567,19 +585,36 @@ classdef shackHartmann < hgsetget
                 %                 size(buffer)
                 [x,y]               = ...
                     meshgrid((0:(nPxLenslet-1)),(0:(mPxLenslet-1)));
-                %                 xyBuffer  ...
-                %                     = zeros(2*obj.nValidLenslet,1);
-                xBuffer             = bsxfun( @times , buffer , x(:) )  ;
-                xBuffer             = sum( xBuffer ) ./ massLenslet  ;
-                %                 xBuffer             = squeeze((xBuffer));
-                yBuffer             = bsxfun( @times , buffer , y(:) )  ;
-                yBuffer             = sum( yBuffer ) ./ massLenslet  ;
-                %                 yBuffer             = squeeze((yBuffer));
-                %                 xyBuffer = squeeze([xBuffer  yBuffer]);
-                %                 size(xyBuffer)
-                xBuffer = reshape(xBuffer,obj.nValidLenslet,nLensletArray*nFrame);
-                yBuffer = reshape(yBuffer,obj.nValidLenslet,nLensletArray*nFrame);
-                sBuffer = bsxfun(@minus,[xBuffer ; yBuffer],obj.referenceSlopes).*obj.slopesUnits;
+                if ~obj.rotatedFrame % rotated frame for measurement along and perpendicular to elongated spots
+                    %                 xyBuffer  ...
+                    %                     = zeros(2*obj.nValidLenslet,1);
+                    xBuffer             = bsxfun( @times , buffer , x(:) )  ;
+                    xBuffer             = sum( xBuffer ) ./ massLenslet  ;
+                    %                 xBuffer             = squeeze((xBuffer));
+                    yBuffer             = bsxfun( @times , buffer , y(:) )  ;
+                    yBuffer             = sum( yBuffer ) ./ massLenslet  ;
+                    %                 yBuffer             = squeeze((yBuffer));
+                    %                 xyBuffer = squeeze([xBuffer  yBuffer]);
+                    %                 size(xyBuffer)
+                    xBuffer = reshape(xBuffer,obj.nValidLenslet,nLensletArray*nFrame);
+                    yBuffer = reshape(yBuffer,obj.nValidLenslet,nLensletArray*nFrame);
+                    sBuffer = bsxfun(@minus,[xBuffer ; yBuffer],obj.referenceSlopes).*obj.slopesUnits;
+                else
+                    x = x - (nPxLenslet-1)/2;
+                    y = y - (nPxLenslet-1)/2;
+                    xPrime = x(:) * cos(obj.theta) + y(:) * sin(obj.theta);
+                    %xPrime = xPrime - mean(xPrime(:)) + (nPxLenslet+1)/2;
+                    yPrime = -x(:) * sin(obj.theta) + y(:) * cos(obj.theta);
+                    %yPrime = yPrime - mean(yPrime(:)) +  (nPxLenslet+1)/2;
+                    xPrimeBuffer             = bsxfun( @times , buffer , xPrime )  ;
+                    xPrimeBuffer             = sum( xPrimeBuffer ) ./ massLenslet ;
+                    %                 xBuffer             = squeeze((xBuffer));
+                    yPrimeBuffer             = bsxfun( @times , buffer , yPrime ) ;
+                    yPrimeBuffer             = sum( yPrimeBuffer ) ./ massLenslet ;
+                    xPrimeBuffer = reshape(xPrimeBuffer,obj.nValidLenslet,nLensletArray*nFrame);
+                    yPrimeBuffer = reshape(yPrimeBuffer,obj.nValidLenslet,nLensletArray*nFrame);
+                    sBuffer = bsxfun(@minus,[xPrimeBuffer ; yPrimeBuffer],obj.referenceSlopes*0).*obj.slopesUnits;
+                end
                 index = isnan(sBuffer);
                 if any(index(:)) % if all pixels threshold
                     warning('OOMAO:shackHartmann:dataProcessing',...
@@ -632,12 +667,12 @@ classdef shackHartmann < hgsetget
                 fprintf('Matched filter algorithm\n')
                 if isempty(obj.matchedFilterR) % no offline matched filter
                     I0 = reshape(buffer(:, floor(length(obj.validLenslet)/2)+1), nPxLenslet, nPxLenslet);
-                    Gx = utilities.crop( (utilities.shift(I0, 1, 0) - I0) / 1, nPxLenslet);
-                    Gy = utilities.crop( (utilities.shift(I0, 0, 1) - I0) / 1, nPxLenslet);
-                    Ixp = utilities.shift(I0, 1, 0);
-                    Ixm = utilities.shift(I0,-1, 0);
-                    Iyp = utilities.shift(I0, 0, 1);
-                    Iym = utilities.shift(I0, 0,-1);
+                    Gx = tools.crop( (tools.shift(I0, 1, 0) - I0) / 1, nPxLenslet);
+                    Gy = tools.crop( (tools.shift(I0, 0, 1) - I0) / 1, nPxLenslet);
+                    Ixp = tools.shift(I0, 1, 0);
+                    Ixm = tools.shift(I0,-1, 0);
+                    Iyp = tools.shift(I0, 0, 1);
+                    Iym = tools.shift(I0, 0,-1);
                     H = [Gx(:) Gy(:) I0(:) Ixp(:) Ixm(:) Iyp(:) Iym(:)];
                     M = [...
                         1 0 0 1 -1 0  0
@@ -676,20 +711,21 @@ classdef shackHartmann < hgsetget
                     end
                 end
                 
-                elseif obj.brightestPixel
+            elseif obj.brightestPixel
                 fprintf('Brightest pixel algorithm\n')
                 fprintf('%i%s', obj.nBrightestPixels, ' brightest pixels')
                 fprintf('\n')
                 nBrightPixels = obj.nBrightestPixels;
-                    parfor ii = 1:obj.nValidLenslet*nLensletArray*nFrame
-                        subap = reshape(buffer(:, ii), nPxLenslet, nPxLenslet);
-                        sortSubap = sort(subap(:));
-                        subap = subap - min(sortSubap(end-(nBrightPixels-1):end));
-                        subap(subap<0) = 0;
-                        [dX dY] = cog(subap);
-                        xBuffer(ii,1) = dX;
-                        yBuffer(ii,1) = dY;
-                    end
+                parfor ii = 1:obj.nValidLenslet*nLensletArray*nFrame
+                    subap = reshape(buffer(:, ii), nPxLenslet, nPxLenslet);
+                    sortSubap = sort(subap(:));
+                    brightestPixelThreshold = sortSubap(end-(nBrightPixels));
+                    % subap = subap - min(sortSubap(end-(nBrightPixels-1):end));
+                    subap(subap<=brightestPixelThreshold) = 0;
+                    [dX dY] = cog(subap);
+                    xBuffer(ii,1) = dX;
+                    yBuffer(ii,1) = dY;
+                end
                 
                 xBuffer = reshape(xBuffer,obj.nValidLenslet,nLensletArray*nFrame);
                 yBuffer = reshape(yBuffer,obj.nValidLenslet,nLensletArray*nFrame);
@@ -834,52 +870,52 @@ classdef shackHartmann < hgsetget
                 nLensletArray = obj.lenslets.nArray*nPicture;
                 
                 indexRasterLenslet_ ...
-                    = utilities.rearrange(size(picture),[nPxLenslet,mPxLenslet]);
+                    = tools.rearrange(size(picture),[nPxLenslet,mPxLenslet]);
                 v = ~obj.validLenslet(:);
                 v = repmat(v,nLensletArray,1);
                 indexRasterLenslet_(:,v) = [];
                 buffer     = picture(indexRasterLenslet_);
                 
                 buffer     = reshape(buffer,nPxLenslet,nPxLenslet,[]);
-%                 tic
-%                 if isempty(obj.spotsLgsSrcKernel)
-                    srcExtent = src(1).extent;
-                    parfor kLenslet=1:size(buffer,3)
-                        buffer(:,:,kLenslet) = conv2(buffer(:,:,kLenslet),srcExtent,'same');
-                    end
-%                 else
-%                     parfor kLenslet=1:size(buffer,3)
-%                         buffer(:,:,kLenslet) = conv2(buffer(:,:,kLenslet),obj.spotsLgsSrcKernel(:,:,kLenslet),'same');
-%                     end
-%                 end
-%                 toc
+                %                 tic
+                %                 if isempty(obj.spotsLgsSrcKernel)
+                srcExtent = src(1).extent;
+                parfor kLenslet=1:size(buffer,3)
+                    buffer(:,:,kLenslet) = conv2(buffer(:,:,kLenslet),srcExtent,'same');
+                end
+                %                 else
+                %                     parfor kLenslet=1:size(buffer,3)
+                %                         buffer(:,:,kLenslet) = conv2(buffer(:,:,kLenslet),obj.spotsLgsSrcKernel(:,:,kLenslet),'same');
+                %                     end
+                %                 end
+                %                 toc
                 
                 % cropping in case of elongatedFieldStopSize;
                 % L. Blanco 2017/01/02
-%                 if ~isempty(obj.lenslets.elongatedFieldStopSize)
-%                     nCrop = obj.lenslets.fieldStopSize * 2 * obj.lenslets.nyquistSampling;
-%                     buffer = utilities.crop(buffer, nCrop);
-%                     nLenslet = size(buffer, 3);
-%                     nRows = sqrt(nLenslet);
-%                     croppedPicture = zeros(nCrop*nRows);
-%                     %conflict with size of picture(indexRasterLenslet_)
-%                     indexRasterLenslet_ = utilities.rearrange(size(croppedPicture),[nCrop,nCrop]);
-%                     v = ~obj.validLenslet(:);
-%                     v = repmat(v,nLensletArray,1);
-%                     indexRasterLenslet_(:,v) = [];
-%                     croppedPicture(indexRasterLenslet_) = buffer;
-%                     obj.lenslets.imagelets = reshape( croppedPicture , nCrop*nRows , nCrop*nRows , nPicture);
-%                 else
-                    %end cropping
-                    picture(indexRasterLenslet_) = buffer;
-                    obj.lenslets.imagelets = reshape( picture , nPx , mPx , nPicture);
-%                 end
+                %                 if ~isempty(obj.lenslets.elongatedFieldStopSize)
+                %                     nCrop = obj.lenslets.fieldStopSize * 2 * obj.lenslets.nyquistSampling;
+                %                     buffer = tools.crop(buffer, nCrop);
+                %                     nLenslet = size(buffer, 3);
+                %                     nRows = sqrt(nLenslet);
+                %                     croppedPicture = zeros(nCrop*nRows);
+                %                     %conflict with size of picture(indexRasterLenslet_)
+                %                     indexRasterLenslet_ = tools.rearrange(size(croppedPicture),[nCrop,nCrop]);
+                %                     v = ~obj.validLenslet(:);
+                %                     v = repmat(v,nLensletArray,1);
+                %                     indexRasterLenslet_(:,v) = [];
+                %                     croppedPicture(indexRasterLenslet_) = buffer;
+                %                     obj.lenslets.imagelets = reshape( croppedPicture , nCrop*nRows , nCrop*nRows , nPicture);
+                %                 else
+                %end cropping
+                picture(indexRasterLenslet_) = buffer;
+                obj.lenslets.imagelets = reshape( picture , nPx , mPx , nPicture);
+                %                 end
                 
             end
             
         end
         
-
+        
         function out = framelets(obj,lensletI,lensletJ,lensletArrayK)
             %% FRAMELETS Per lenslet detector frame
             %
@@ -1078,7 +1114,7 @@ classdef shackHartmann < hgsetget
             %scatter(real(pos12), imag(pos12),'g')
             pos22 = xLeftLim(obj.validLenslet)+dSubap + 1i*(yLeftLim(obj.validLenslet)+dSubap);
             %scatter(real(pos22), imag(pos22),'k')
-            fill(real([pos11 pos12 pos21  pos22])', imag([pos11 pos12 pos22 pos21])','r','FaceColor','none') 
+            fill(real([pos11 pos12 pos21  pos22])', imag([pos11 pos12 pos22 pos21])','r','FaceColor','none')
             if nargin == 3
                 scatter(real(dm.modes.actuatorCoord(dm.validActuator)), imag(dm.modes.actuatorCoord(dm.validActuator)))
             end
@@ -1405,7 +1441,7 @@ classdef shackHartmann < hgsetget
             end
             
         end
-
+        
         function gridMask = validLensletSamplingMask(obj,sample)
             %% VALIDLENSLETSAMPLINGMASK
             %
@@ -1606,7 +1642,7 @@ classdef shackHartmann < hgsetget
             
         end
         
-        %% generate the LGS elongated spot objects as seen by every subaperture 
+        %% generate the LGS elongated spot objects as seen by every subaperture
         function  o = generateElongatedKernel(obj,tel,lgs, binningFactor)
             % L.Blanco 02/28/2017 Modified to remove kernels fft
             % computations
@@ -1633,15 +1669,15 @@ classdef shackHartmann < hgsetget
                     toc(a)
                 end
             end
-            p = [lgs.nPhoton]/sum([lgs.nPhoton]); % flux from Na profile          
+            p = [lgs.nPhoton]/sum([lgs.nPhoton]); % flux from Na profile
             xL = lgs(1).viewPoint(1);
             yL = lgs(1).viewPoint(2);
             d = tel.D/obj.lenslets.nLenslet;
             uLenslet = linspace(-1,1,obj.lenslets.nLenslet)*(tel.D/2-d/2);
             [xLenslet,yLenslet] = meshgrid(uLenslet);
-%             maskLenslet = obj.validLenslet;
-%             xLenslet = xLenslet(maskLenslet);
-%             yLenslet = yLenslet(maskLenslet);
+            %             maskLenslet = obj.validLenslet;
+            %             xLenslet = xLenslet(maskLenslet);
+            %             yLenslet = yLenslet(maskLenslet);
             xx = xLenslet(:)-xL;
             yy = yLenslet(:)-yL;
             pixelScale = lgs(1).wavelength/d/2*obj.lenslets.nyquistSampling;
@@ -1658,25 +1694,40 @@ classdef shackHartmann < hgsetget
                 ps(2,2) = 1;
             else
                 ps = lgs(1).extent;
-                ps = utilities.crop(ps, 32);
-%                 if mod(size(ps, 1),2) == 1
-%                     ps = ps(2:end, 2:end); % even number of pixels in src.extent
-%                 end
+                %modif TFu - 2019/04/29
+                %%%%%%%%
+                nSubap = size(obj.validLenslet,1);
+                nPxSubap = tel.resolution/nSubap;
+                ps = tools.crop(ps, nPxSubap*binningFactor);
+                %%%%%%%%
+                % instead of ...
+                %ps = tools.crop(ps, 32);
+                %%%%%%%
+                %                 if mod(size(ps, 1),2) == 1
+                %                     ps = ps(2:end, 2:end); % even number of pixels in src.extent
+                %                 end
             end
             
             %expand the kernel size to avoid circularization when shifting
             maxElong(isnan(maxElong)) = 0;
             nPxElong = size(ps, 1) + 2 * maxElong;
+                
             nPxElong = 4 * binningFactor * ceil(nPxElong / (4*binningFactor));
-%             twos = 2.^linspace(1,10,10);
-%             nPxElong = twos(find( (abs(nPxElong-twos)) == min(abs(nPxElong-twos))));
-            ps = utilities.crop(ps, nPxElong);
+            %nPxElong = binningFactor * ceil(nPxElong / (binningFactor));
+
+ 
+            %             twos = 2.^linspace(1,10,10);
+            %             nPxElong = twos(find( (abs(nPxElong-twos)) == min(abs(nPxElong-twos))));
+           
+            ps = tools.crop(ps, nPxElong); %modif ou pas je sais plus 
             
             %binning to match detector sampling
             %binningFactor = obj.lenslets.nLensletsImagePx ./ obj.camera.resolution(1);
+          
             nPxElong = nPxElong / binningFactor; % the spot kernels are generated using the WFS binning value (vs lenslet pixels)
-                        
-            o = zeros([nPxElong nPxElong obj.lenslets.nLenslet^2]);
+           
+            %%%%%%%%
+           o = zeros([nPxElong nPxElong obj.lenslets.nLenslet^2]);
             % unbinnedO = zeros(length(ps));
             % fftO = zeros([nPxElong nPxElong obj.lenslets.nLenslet^2]);
             nLenslets = obj.lenslets.nLenslet^2;
@@ -1686,22 +1737,22 @@ classdef shackHartmann < hgsetget
                 unbinnedO = zeros(length(ps));
                 for iHeight = 1:length(lgsHeight)
                     if isempty(lgsExtent) % no lateral extensioon of the source
-                        %o(:,:,iLenslet) = o(:,:,iLenslet) + p(iHeight) .* utilities.shift(ps,sx(iLenslet,iHeight), sy(iLenslet,iHeight));
-                        defaultShift = 0;
-                        shiftedKernel = utilities.shift(ps,sx(iLenslet,iHeight)+defaultShift, sy(iLenslet,iHeight)+defaultShift);
+                        %o(:,:,iLenslet) = o(:,:,iLenslet) + p(iHeight) .* tools.shift(ps,sx(iLenslet,iHeight), sy(iLenslet,iHeight));
+                        defaultShift = 0.; %MODIF Thierry
+                        shiftedKernel = tools.shift(ps,sx(iLenslet,iHeight)+defaultShift, sy(iLenslet,iHeight)+defaultShift);
                         shiftedKernel = shiftedKernel .* (shiftedKernel>0);
-                        o(:,:,iLenslet) = o(:,:,iLenslet) + utilities.binning(p(iHeight) .* shiftedKernel, [nPxElong,nPxElong]);
+                        o(:,:,iLenslet) = o(:,:,iLenslet) + tools.binning(p(iHeight) .* shiftedKernel, [nPxElong,nPxElong]);
                     else % non-zero lateral extension of the source
-                        defaultShift = 0;
-                        shiftedKernel = utilities.shift(ps,sx(iLenslet,iHeight)+defaultShift, sy(iLenslet,iHeight)+ defaultShift);
+                        defaultShift = 0.;%MODIF Thierry
+                        shiftedKernel = tools.shift(ps,sx(iLenslet,iHeight)+defaultShift, sy(iLenslet,iHeight)+ defaultShift);
                         shiftedKernel = shiftedKernel .* (shiftedKernel>=0);
-                        %o(:,:,iLenslet) = o(:,:,iLenslet) + p(iHeight) .* utilities.shift(ps,sx(iLenslet,iHeight)-0.5, sy(iLenslet,iHeight)-0.5);
-                        %o(:,:,iLenslet) = o(:,:,iLenslet) + utilities.binning(p(iHeight) .* shiftedKernel, [nPxElong,nPxElong]);
+                        %o(:,:,iLenslet) = o(:,:,iLenslet) + p(iHeight) .* tools.shift(ps,sx(iLenslet,iHeight)-0.5, sy(iLenslet,iHeight)-0.5);
+                        %o(:,:,iLenslet) = o(:,:,iLenslet) + tools.binning(p(iHeight) .* shiftedKernel, [nPxElong,nPxElong]);
                         unbinnedO = unbinnedO + p(iHeight) .* shiftedKernel;
-                        % fftO(:,:,iLenslet) = fftO(:,:,iLenslet) + fftshift(fft2(utilities.binning(p(iHeight) .* shiftedKernel, [nPxElong,nPxElong]), nPxElong*2, nPxElong*2));
+                        % fftO(:,:,iLenslet) = fftO(:,:,iLenslet) + fftshift(fft2(tools.binning(p(iHeight) .* shiftedKernel, [nPxElong,nPxElong]), nPxElong*2, nPxElong*2));
                     end
                 end
-                o(:,:,iLenslet) = utilities.binning(unbinnedO, [nPxElong,nPxElong]);
+                o(:,:,iLenslet) = tools.binning(unbinnedO, [nPxElong,nPxElong]);
                 % fftO(:,:,iLenslet) = fftshift(fft2(o(:,:,iLenslet), nPxElong, nPxElong));
             end
             
@@ -1766,6 +1817,8 @@ classdef shackHartmann < hgsetget
             inputs.addParameter('ensquaredEnergy',1,@isnumeric);
             inputs.addParameter('centroidingAlgorithm','',@ischar);
             inputs.addParameter('emccd',0,@isnumeric);
+            inputs.addParameter('rotatedFrame',false,@islogical);
+            inputs.addParameter('computeInverseCovMat',false,@islogical);
             inputs.parse(obj,tel,atm,gs,ss,varargin{:});
             
             obj    = inputs.Results.obj;
@@ -1785,15 +1838,23 @@ classdef shackHartmann < hgsetget
             ensquaredEnergy = inputs.Results.ensquaredEnergy;
             centroidingAlgorithm = inputs.Results.centroidingAlgorithm;
             emccd = inputs.Results.emccd;
+            rotatedFrame = inputs.Results.rotatedFrame;
+            computeInverseCovMat = inputs.Results.computeInverseCovMat;
             naLgs = false;
             nLgs = size(launchCoord,1);
+            nLgs = length(gs);
             noiseVar = cell(nLgs,1);
             % Recursive call to theoreticalNoise if there are more than 1
             % LGS at a time
             if  nLgs > 1
                 for iLgs = 1:nLgs
                     noiseVar{iLgs} = obj.theoreticalNoise(tel, atm, gs(iLgs), ss,...
-                        'naParam',naParam(iLgs,:),'lgsLaunchCoord',launchCoord(iLgs,:),'centroidingAlgorithm',centroidingAlgorithm);
+                        'naParam',naParam(iLgs,:),'lgsLaunchCoord',launchCoord(iLgs,:),'centroidingAlgorithm',centroidingAlgorithm,'rotatedFrame',rotatedFrame);
+                    if computeInverseCovMat
+                        buffer = pinv(full(noiseVar{iLgs}));
+                        buffer(abs(buffer)<1e-7) = 0;
+                        noiseVar{iLgs} = sparse(buffer);
+                    end
                 end
                 varargout{1} = noiseVar;
                 if nargout>1
@@ -1832,8 +1893,8 @@ classdef shackHartmann < hgsetget
                 
                 [oe,re] = cart2pol(xLenslet-xL,yLenslet-yL);
                 %                 re = hypot(xLenslet,yLenslet);
-                thetaNa = re*deltaNa/naAltitude^2;
-                
+                %thetaNa = re*deltaNa/naAltitude^2;
+                thetaNa = re*deltaNa/(naAltitude^2 + naAltitude*deltaNa);
             end
             
             if obj.camera.exposureTime ~= tel.samplingTime
@@ -1873,7 +1934,7 @@ classdef shackHartmann < hgsetget
                 dNa(index)...
                     = min(d,atm.r0);
                 %                 fwhm  = sqrt(1./atm.r0^2+1./dNa.^2);
-                fwhm  = [1./atm.r0 ; 1./dNa];
+                fwhm  = [1./min(d,atm.r0) ; 1./dNa];
                 seeingNa = atm.seeingInArcsec*constants.arcsec2radian;
             else
                 fwhm = ones(obj.nValidLenslet,1)./min(d,atm.r0);
@@ -1945,63 +2006,68 @@ classdef shackHartmann < hgsetget
                 %                 map(obj.validLenslet) = sigma2Y + sigma2X;
                 %                 imagesc(map)
                 
-                B = zeros(obj.nSlope*nGs,3);
-                noiseCovarDiag = [ ...
-                    sigma2X.*sin(oe).^2 + sigma2Y.*cos(oe).^2  ...
-                    sigma2X.*cos(oe).^2 + sigma2Y.*sin(oe).^2]';
-                noiseCovarDiagP1 = ...
-                    -(sigma2X.*ones(obj.nValidLenslet,1) - sigma2Y).*...
-                    cos(oe).*sin(oe);
-                B(:,1) = noiseCovarDiag(:);
-                B(1:2:end,2) = noiseCovarDiagP1;
-                B(2:2:end,3) = noiseCovarDiagP1;
-                noiseVar = spdiags(B,[0,-1,1],obj.nSlope*nGs,obj.nSlope*nGs);
-                % noiseVar = bsxfun( @plus , noiseVar(1,:) , noiseVar(2:end,:) );
-                
-                % --- show figure ---
-                if ishandle(obj.noiseDisplayHandle)
-                    figure(obj.noiseDisplayHandle.Number)
+                if ~rotatedFrame
+                    B = zeros(obj.nSlope*nGs,3);
+                    noiseCovarDiag = [ ...
+                        sigma2X.*sin(oe).^2 + sigma2Y.*cos(oe).^2  ...
+                        sigma2X.*cos(oe).^2 + sigma2Y.*sin(oe).^2]';
+                    noiseCovarDiagP1 = ...
+                        -(sigma2X.*ones(obj.nValidLenslet,1) - sigma2Y).*...
+                        cos(oe).*sin(oe);
+                    B(:,1) = noiseCovarDiag(:);
+                    B(1:2:end,2) = noiseCovarDiagP1;
+                    B(2:2:end,3) = noiseCovarDiagP1;
+                    noiseVar = spdiags(B,[0,-1,1],obj.nSlope*nGs,obj.nSlope*nGs);
+                    % noiseVar = bsxfun( @plus , noiseVar(1,:) , noiseVar(2:end,:) );
+                    
+                    % --- show figure ---
+                    if ishandle(obj.noiseDisplayHandle)
+                        figure(obj.noiseDisplayHandle.Number)
+                        hold on
+                    else
+                        obj.noiseDisplayHandle = figure;
+                    end
+                    di = diag(noiseVar);
+                    ra = di(1:2:end);
+                    rb = di(2:2:end);
+                    ra = sqrt(ra.^2 + rb.^2);
+                    plotLineColor = {'b', 'k', 'r', 'g', 'm', 'c', 'y'};
+                    ellipse(ra/max(ra)/4,ra/max(ra)/20,oe, xLenslet, yLenslet,plotLineColor{randi(7)});
                     hold on
+                    scatter(xL, yL, 'ro')
+                    box on
+                    title('Noise on LGS sub-apertures','fontsize',18)
+                    ylabel('distance, [m]')
+                    xlabel('distance, [m]')
+                    % -----------------------
+                    
+                    % change output format to comply with [X;Y] slopes
+                    % concatenation
+                    B = reshape(noiseCovarDiag',2*length(noiseCovarDiag),1);
+                    B(1:1:end/2,2) = noiseCovarDiagP1;
+                    B(end/2+1:1:end,3) = noiseCovarDiagP1;
+                    noiseVar = spdiags(B,[0,-obj.nValidLenslet,obj.nValidLenslet],obj.nSlope*nGs,obj.nSlope*nGs);
                 else
-                    obj.noiseDisplayHandle = figure;
+                    noiseVar = diag([sigma2X;sigma2Y]);
                 end
-                di = diag(noiseVar);
-                ra = di(1:2:end);
-                rb = di(2:2:end);
-                ra = sqrt(ra.^2 + rb.^2);
                 
-                ellipse(ra/max(ra)/5,ra/max(ra)/10,oe, xLenslet, yLenslet,'k');
-                hold on
-                scatter(xL, yL, 'ro')
-                box on
-                title('Noise on LGS sub-apertures','fontsize',18)
-                ylabel('distance, [m]')
-                xlabel('distance, [m]')
-                % -----------------------
-                
-                % change output format to comply with [X;Y] slopes
-                % concatenation
-                B = reshape(noiseCovarDiag',2*length(noiseCovarDiag),1);
-                B(1:1:end/2,2) = noiseCovarDiagP1;
-                B(end/2+1:1:end,3) = noiseCovarDiagP1;
-                noiseVar = spdiags(B,[0,-obj.nValidLenslet,obj.nValidLenslet],obj.nSlope*nGs,obj.nSlope*nGs);
             else
                 nGs =length(gs);
                 noiseVar = zeros(length(fwhm),nGs);
                 for kGs = 1:nGs
                     if isempty(centroidingAlgorithm)
-                    if nLenslet>1
-                        snr = sqrt(2*nph(kGs).^2./( nph(kGs) + ...
-                            (2/3)*(gs(kGs).wavelength./ss.wavelength).^2.*(4*ron*d.*fwhm*ND).^2 + ...
-                            8*nbg/3) );
-                    else % quad-cell SNR
-                        snr = nph(kGs)./sqrt(nph(kGs) + 4*ron.^2. + nbg);
-                    end
-                    noiseVar(:,kGs) = ...
-                        (gs(kGs).wavelength./ss.wavelength).^2.*(pi.*d.*fwhm./snr).^2;
-                    if obj.lenslets.nLenslet==1
-                        noiseVar(:,kGs) = (3*pi/16)^2*noiseVar(:,kGs)/4; % To comply with Hardy and Tyler formulaes
-                    end
+                        if nLenslet>1
+                            snr = sqrt(2*nph(kGs).^2./( nph(kGs) + ...
+                                (2/3)*(gs(kGs).wavelength./ss.wavelength).^2.*(4*ron*d.*fwhm*ND).^2 + ...
+                                8*nbg/3) );
+                        else % quad-cell SNR
+                            snr = nph(kGs)./sqrt(nph(kGs) + 4*ron.^2. + nbg);
+                        end
+                        noiseVar(:,kGs) = ...
+                            (gs(kGs).wavelength./ss.wavelength).^2.*(pi.*d.*fwhm./snr).^2;
+                        if obj.lenslets.nLenslet==1
+                            noiseVar(:,kGs) = (3*pi/16)^2*noiseVar(:,kGs)/4; % To comply with Hardy and Tyler formulaes
+                        end
                     elseif strcmp(centroidingAlgorithm,'wcog') %thomas06_ComparisonCentroidAlgos_mnras.pdf Eq (23) and (24)
                         Nd = 2*obj.lenslets.nyquistSampling;% #pixels in diffraction-limited spot (may need some fixing for spots sampled below nyquist)
                         %Computation of Nt
@@ -2076,24 +2142,39 @@ classdef shackHartmann < hgsetget
             end
             atm.wavelength = originalAtmWavelength;
         end
-        
-        function gainCalibration(obj,tel,ngs)
+        function gainCalibrationDev(obj,tel,ngs)
             %% GAINCALIBRATION
             % calibrate gain of cetner of gravity
             %
             % wfs.gainCalibration(tel,ngs)
-            
+            %
+            % the WFS output is in units of \lambda/D/2, i.e. half the
+            % diffraction limit for the aperture/sub-aperture
+            %
+            % When the pixel is \lambda/D (i.e. 2x \lambda/D/2) the gain
+            % becomes ~2. For higher binning factors the scaling factor
+            % grows in a non-linear fashion
             
             nPx = obj.camera.resolution(1)/size(obj.validLenslet,1);
             d   = tel.D/size(obj.validLenslet,1);
             
             ngs = ngs.*tel*obj;
             obj.pointingDirection = zeros(2,1);
-  
-            pixelScale = obj.lenslets.fieldStopSize*ngs.wavelength/d...
-                /nPx;
-            tipStep = pixelScale/2;
-
+            
+            ps = obj.lenslets.pixelScale(ngs,tel);
+            fprintf('The current lenslet pixel-scale is %f mas\n',ps.convert('mas')) % sampling of the electic field
+            binFactor = 2*obj.lenslets.fieldStopSize/obj.lenslets.nyquistSampling/obj.camera.resolution(1);
+            lo2DInMas = ngs.wavelength/(2*d)*constants.radian2mas;
+            lo2D = ngs.wavelength/(2*d);
+            detectorPixelSizeInMas = lo2DInMas*binFactor;
+            detectorPixelSize = lo2D*binFactor;
+            fprintf('The current detector pixel-scale is %f mas\n',detectorPixelSizeInMas); % sky-angle of the detector pixels after binning
+            
+            % the next three lines of code provide better LTAO performance
+            % at the centre of the field in the case of KAPA (+7% in H for ZA=50, median MK profile!).
+            pixelScale = obj.lenslets.fieldStopSize*ngs.wavelength/d/nPx;
+            fprintf('The current delta %f mas\n',pixelScale*constants.radian2mas);
+            tipStep = pixelScale/2/2;
             nStep   = floor(nPx/3)*2;
             sx      = zeros(1,nStep+1);
             u       = 0:nStep;
@@ -2111,9 +2192,9 @@ classdef shackHartmann < hgsetget
             
             Ox_in  = u*tipStep*constants.radian2arcsec;
             Ox_out = sx*ngs.wavelength/d/2*constants.radian2arcsec;
-
+            figure
             plot(Ox_in, Ox_out)
-            hold 
+            hold
             plot(Ox_in, Ox_in,'k:')
             xlabel('input')
             ylabel('output')
@@ -2127,6 +2208,161 @@ classdef shackHartmann < hgsetget
             
             
         end
+        
+        function gainCalibration(obj,tel,ngs,unit)
+            %% GAINCALIBRATION
+            % calibrate gain of cetner of gravity
+            %
+            % wfs.gainCalibration(tel,ngs)
+            %
+            % the WFS output is default in units of \lambda/D/2, i.e. half the
+            % diffraction limit for the aperture/sub-aperture
+            %
+            % When the pixel is \lambda/D (i.e. 2x \lambda/D/2) the gain
+            % becomes ~2. For higher binning factors the scaling factor
+            % grows in a non-linear fashion
+            %
+            % unit toggles between units of aperture/sub-aperture
+            % diffraction or units of pixels such that for a source located
+            % one pixelSize off-axis the measurement is exactly one
+            if nargin < 4
+                unit = 'lo2D';
+            end
+            
+            % reset the calibrated gain
+            obj.slopesUnits = 1;
+            
+            
+            nPx = obj.camera.resolution(1)/obj.lenslets.nLenslet;
+            d   = tel.D/size(obj.validLenslet,1);
+                        ngs = ngs.*tel*obj;
+            obj.pointingDirection = zeros(2,1);
+            
+            ps = obj.lenslets.pixelScale(ngs,tel);
+            fprintf('The current lenslet pixel-scale is %f mas\n',ps.convert('mas')) % sampling of the electic field
+            binFactor = 2*obj.lenslets.fieldStopSize/obj.lenslets.nyquistSampling/nPx;
+            lo2DInMas = ngs.wavelength/(2*d)*constants.radian2mas;
+            lo2D = ngs.wavelength/(2*d);
+            detectorPixelSizeInMas = lo2DInMas*binFactor;
+            detectorPixelSize = lo2D*binFactor;
+            fprintf('The current detector pixel-scale is %f mas\n',detectorPixelSizeInMas); % sky-angle of the detector pixels after binning
+            
+            
+            switch unit
+                case 'lo2D'
+                    
+                    % the next three lines of code provide better LTAO performance
+                    % at the centre of the field in the case of KAPA (+7% in H for ZA=50, median MK profile!).
+                    pixelScale = obj.lenslets.fieldStopSize*ngs.wavelength/d/nPx;
+                    fprintf('The current delta %f mas\n',pixelScale*constants.radian2mas);
+                    tipStep = pixelScale/2/2;
+                    nStep   = floor(nPx/3)*2;
+                    sx      = zeros(1,nStep+1);
+                    u       = 0:nStep;
+                    obj.camera.frameListener.Enabled = false;
+                    obj.slopesListener.Enabled = false;
+                    
+                    warning('off','oomao:shackHartmann:relay')
+                    for kStep=u
+                        ngs.zenith = -tipStep*kStep;
+                        +ngs;
+                        drawnow
+                        sx(kStep+1) = median(obj.slopes(1:end/2));
+                    end
+                    warning('on','oomao:shackHartmann:relay')
+                    
+                    Ox_in  = u*tipStep*constants.radian2arcsec;
+                    Ox_out = sx*ngs.wavelength/d/2*constants.radian2arcsec;
+                    figure
+                    plot(Ox_in, Ox_out)
+                    hold
+                    plot(Ox_in, Ox_in,'k:')
+                    xlabel('input')
+                    ylabel('output')
+                    %plot(u*tipStep/pixelScale,(u*tipStep/pixelScale)./sx);
+                    
+                    slopesLinCoef = polyfit(Ox_in,Ox_out,1);
+                    title(['gain = ' num2str(1/slopesLinCoef(1))])
+                    obj.slopesUnits = 1/slopesLinCoef(1);
+                    ngs.zenith = 0;
+                case 'pixel'
+                    % opticalGain fine tuning :: make it exactly 1 at a delta of 1 detector pixel
+                    zern = zernike(2,tel.D,'resolution',tel.resolution,'pupil',tel.pupil);
+                    zern.c = detectorPixelSizeInMas/constants.radian2mas*tel.D/4;% tel.D/4*ngs.wavelength/(2*tel.D);
+                    ngs = ngs.*zern*obj;
+                    obj.slopesUnits = 1/median(obj.slopes(1:end/2));% wfs.slopesUnits/wfs.slopes(1)*pixelSize/lo2DInMas;
+            end
+            
+            % reset the wfs pointing
+            obj.pointingDirection = [];
+            
+        end
+        
+        %         function gainCalibration(obj,tel,ngs)
+        %             %% GAINCALIBRATION
+        %             % calibrate gain of cetner of gravity
+        %             %
+        %             % wfs.gainCalibration(tel,ngs)
+        %             %
+        %             % the WFS output is in units of \lambda/D/2, i.e. half the
+        %             % diffraction limit for the aperture/sub-aperture
+        %             %
+        %             % When the pixel is \lambda/D (i.e. 2x \lambda/D/2) the gain
+        %             % becomes ~2. For higher binning factors the scaling factor
+        %             % grows in a non-linear fashion
+        %
+        %
+        %             nPx = obj.camera.resolution(1)/size(obj.validLenslet,1);
+        %             d   = tel.D/size(obj.validLenslet,1);
+        %
+        %             ngs = ngs.*tel*obj;
+        %             obj.pointingDirection = zeros(2,1);
+        %
+        %
+        %             binFactor = max(obj.lenslets.nLensletsImagePx/obj.camera.resolution(1),1);
+        %             pixelScale = ngs.wavelength/d/2/obj.lenslets.nyquistSampling*binFactor;
+        %             fprintf('Pixel Scale: %12.2f mas\n', pixelScale*constants.radian2mas)
+        %             nStep = 10;
+        %             tipStep = pixelScale/nStep/2/binFactor; % on-sky off-set up to 1/2 pixel/binFactor (division by bin factor is to "avoid" non-linear operation)
+        %
+        %             % the next three lines of code provide better LTAO performance
+        %             % at the centre of the field in the case of KAPA (+7% in H for ZA=50, median MK profile!).
+        %             pixelScale = obj.lenslets.fieldStopSize*ngs.wavelength/nPx;
+        %             tipStep = pixelScale/2/2;
+        %             nStep   = floor(nPx/3)*2;
+        %
+        %             sx      = zeros(1,nStep+1);
+        %             u       = 0:nStep;
+        %             obj.camera.frameListener.Enabled = false;
+        %             obj.slopesListener.Enabled = false;
+        %             u*tipStep*constants.radian2mas
+        %             warning('off','oomao:shackHartmann:relay')
+        %             for kStep=u
+        %                 ngs.zenith = -tipStep*kStep;
+        %                 +ngs;
+        %                 drawnow
+        %                 sx(kStep+1) = median(obj.slopes(1:end/2));
+        %             end
+        %             warning('on','oomao:shackHartmann:relay')
+        %
+        %             Ox_in  = u*tipStep*constants.radian2arcsec;
+        %             Ox_out = sx*ngs.wavelength/d/2*constants.radian2arcsec;
+        %             figure
+        %             plot(Ox_in, Ox_out)
+        %             hold
+        %             plot(Ox_in, Ox_in,'k:')
+        %             xlabel('input')
+        %             ylabel('output')
+        %             %plot(u*tipStep/pixelScale,(u*tipStep/pixelScale)./sx);
+        %
+        %             slopesLinCoef = polyfit(Ox_in,Ox_out,1);
+        %             title(['gain = ' num2str(1/slopesLinCoef(1))])
+        %             obj.slopesUnits = 1/slopesLinCoef(1);
+        %             ngs.zenith = 0;
+        %             obj.pointingDirection = [];
+        %
+        %
+        %         end
     end
     
     methods (Static)
@@ -2138,6 +2374,30 @@ classdef shackHartmann < hgsetget
             obj.log = logBook.checkIn(obj);
         end
         
+                %% get reconstruction grid - used in caes where a phase is reconstructed where the actuators are located, or a oversampling is applied
+                function val = reconstructionGrid(obj,os)
+                % os stands for overSampling. Can be 1 or 2. 
+                % If os=1, reconstructionGrid pitch = subaperturePitch, 
+                % if os=2, reconstructionGrid pitch = subaperturePitch/2
+            if nargin == 0
+                val = get.validActuator(obj);
+            elseif os ==2
+                nElements            = os*obj.lenslets.nLenslet+1; % Linear number of lenslet+actuator
+                validLensletActuator = zeros(nElements);
+                index                = 2:2:nElements; % Lenslet index
+                validLensletActuator(index,index) = obj.validLenslet;
+                for xLenslet = index
+                    for yLenslet = index
+                        if validLensletActuator(xLenslet,yLenslet)==1
+                            xActuatorIndice = ones(3,1)*(xLenslet-1:xLenslet+1);
+                            yActuatorIndice =ones(3,1)*(yLenslet-1:yLenslet+1) ;
+                            validLensletActuator(xActuatorIndice,yActuatorIndice) = 1;
+                        end
+                    end
+                end
+                val = logical(validLensletActuator);
+            end
+        end
     end
     
     methods (Access=private)
@@ -2178,4 +2438,4 @@ function y = linearSplineInt(x)
 
 y = -(x-sign(x)).^2./(2.*sign(x));
 
-end 
+end

@@ -20,7 +20,9 @@ classdef imager < detector
         strehl;
         % entrapped energy
         ee;
-        % entrapped energy slit width
+        % entrapped energy slit width in # pixels (conversion to physical
+        % units done by multiplying by the pixel scale)  -
+        % ccorreia ~May2019
         eeWidth;
         % telescope diameter
         diameter
@@ -100,8 +102,8 @@ classdef imager < detector
 %             end
               readOut(obj,obj.imgLens.imagelets)
               if obj.frameCount==0 && obj.startDelay==0
-                  %flush(obj,length(src))
-                  flush(obj)
+                  flush(obj,length(src))
+                  %flush(obj)
               end
         end
         
@@ -112,13 +114,15 @@ classdef imager < detector
             end
             if ~isempty(obj.referenceFrame) && ~isempty(obj.frame)
                 obj.imgLens.fieldStopSize = obj.imgLens.fieldStopSize*2;
+                [n1,n2] = size(obj.referenceFrame);%n = length(obj.referenceFrame);
+                nSrc = n2/n1; % if referenceFrame is square, nSrc=1 otherwise, nSrc = n2/n1 
                 src_ = source.*obj.referenceFrame;
                 wavePrgted = propagateThrough(obj.imgLens,src_);
                 otf =  abs(wavePrgted);
                 otf = mat2cell(otf,size(otf,1),size(otf,2)/nSrc*ones(1,nSrc));
                 nFrame = obj.exposureTime*obj.clockRate;
                 
-                [n1,n2] = size(obj.referenceFrame);%n = length(obj.referenceFrame);
+                
                 m_frame = obj.frame/nFrame;
                 m_frame = reshape(m_frame, size(m_frame,1), size(m_frame,2)*size(m_frame,3));
                 nf = [nSrc size(m_frame,2)/n2]; %nf = size(m_frame)/n;
@@ -127,6 +131,7 @@ classdef imager < detector
                 obj.strehl = zeros(nf);% obj.strehl = zeros(1,length(m_frame));
                 if ~isempty(obj.eeWidth)
                     obj.ee     = zeros([nf length(obj.eeWidth)]);%zeros(1,length(m_frame));
+                    obj.ee = squeeze(obj.ee); % remove non-singleton dimensions
                 end
                 
                 if ~isempty(obj.tel)
@@ -146,11 +151,13 @@ classdef imager < detector
                         obj.strehl(kobj,kFrame) = sum(otfAO{kobj}(:))/sum(otf{kobj}(:));
                         % entrapped energy
                         
-                        if ~isempty(obj.eeWidth)
+                        if ~isempty(obj.eeWidth) % EE in eeWidth # of pixels
                             for kIntegBoxSize = 1:length(obj.eeWidth)
-                                a      = (obj.eeWidth(kIntegBoxSize)/(src_.wavelength/D*constants.radian2arcsec))/D;
+                                %a      = (obj.eeWidth(kIntegBoxSize)/(src_.wavelength/D*constants.radian2arcsec))/D;
+                                a = obj.eeWidth(kIntegBoxSize);
                                 nOtf   = length(otfAO{kobj});
-                                u      = linspace(-1,1,nOtf).*D;
+                                %u      = linspace(-1,1,nOtf).*D;
+                                u      = linspace(-1,1,nOtf); % removed normalisation by D. The integration box is assumed in # of pixels. Conversion to physical units taken care outside of this function
                                 [x,y]  = meshgrid(u);
                                 eeFilter ...
                                     = a^2*(sin(pi.*x.*a)./(pi.*x.*a)).*...

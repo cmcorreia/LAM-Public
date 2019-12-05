@@ -31,6 +31,9 @@ classdef lensletArray < handle
         % extended using zero-padding, which is an approximation
         elongatedFieldStopSize = [];
         convKernel = false;
+
+        % amount of focus on each lenslet to produce a defocused spot
+        liftedShackHartmannFocus;
     end
     
     properties (SetObservable=true)
@@ -181,6 +184,10 @@ classdef lensletArray < handle
             % out = pixelScale(obj,src,tel) returns the pixel scale
             % projected in the sky for the specified source and telescope
             % object
+            %
+            % ATTENTION: This is the "numerical" pixel scale, not the
+            % detector pixel scale which after binning may be different
+            % from this one
             
             nOutWavePx    = obj.nLensletWavePx*obj.fftPad;    % Pixel length of the output wave
             evenOdd       = rem(obj.nLensletWavePx,2);
@@ -188,7 +195,7 @@ classdef lensletArray < handle
                 nOutWavePx = nOutWavePx + evenOdd;
             end
             nOutWavePx = max(nOutWavePx,obj.nLensletWavePx);
-            out = skyAngle( (src.wavelength/tel.D)*obj.nLensletWavePx*obj.nLenslet/nOutWavePx );
+            out = skyAngle( (src.wavelength/tel.D)*obj.nLensletWavePx*obj.nLenslet/nOutWavePx);
         end
 
         function wavePrgted = propagateThrough(obj,src_in)
@@ -255,6 +262,10 @@ classdef lensletArray < handle
                 obj.nLensletWavePx = nLensletWavePx;
             end
             nLensletArray = nLensletsWavePxNGuideStar/nLensletsWavePx;
+            
+            if ~isempty(obj.liftedShackHartmannFocus)
+                val = obj.liftedShackHartmannFocus.*val;
+            end
 %             obj.nArray = nLensletArray;
             % Invocation of the zoom optics for conjugation to finite
             % distance

@@ -46,6 +46,7 @@ classdef pyramid < handle
         extendedObject = 0;         % flag for extended object
         fftPhasor = 1;              % pre-computation of the fftPhasor for the extended object case
         useLinearIntensityLightMap=0;% use the physical-optics pyramidTransform model or instead a linear approximation (cf O. Fauvarque)
+        graphicalDisplay = 0;       % sets the display ON or OFF (useful for cluster execution)
     end
     properties(GetAccess = 'public', SetAccess = 'private')
         validActuator;              % map of validActuators [default at corners of sub-apertures]
@@ -105,6 +106,7 @@ classdef pyramid < handle
             addParameter(p,'modulation',0,@isnumeric);
             addParameter(p,'rooftop',[0 0],@isnumeric);
             addParameter(p,'binning',1,@isnumeric);
+            addParameter(p,'graphicalDisplay',1,@isnumeric);
             addParameter(p,'c',2,@isnumeric);
             addParameter(p,'alpha',pi/2,@isnumeric);
             addParameter(p,'obstructionRatio',0,@isnumeric);
@@ -134,6 +136,7 @@ classdef pyramid < handle
             pwfs.p_alpha                = p.Results.alpha;
             pwfs.obstructionRatio       = p.Results.obstructionRatio;
             pwfs.p_binning              = p.Results.binning;
+            pwfs.graphicalDisplay       = p.Results.graphicalDisplay;
             pwfs.c                      = p.Results.c; %triggers the setting of the validDetectorPixelss and validSlopes
             pwfs.modulation             = p.Results.modulation;
             pwfs.camera                 = detector(2*pwfs.c*nLenslet);
@@ -144,6 +147,7 @@ classdef pyramid < handle
             pwfs.viewFocalPlane         = p.Results.viewFocalPlane;
             pwfs.extendedObject         = p.Results.extendedObject;
             pwfs.useLinearIntensityLightMap = p.Results.useLinearIntensityLightMap;
+            
             
             if pwfs.extendedObject % CHECK for object size versus FOV on the pyramid
                 sizeObjectMax = max([pwfs.object.zenith]) * 2; % maximum size of object in radians on sky
@@ -228,24 +232,36 @@ classdef pyramid < handle
                 pwfs_ = pyramid(pwfs.nLenslet,pwfs.resolution,'modulation',pwfs.modulationCalibPwfs,'alpha',pwfs.alpha,'c',pwfs.c,...
                     'isInternalCalibrationPWFS',1,...
                     'obstructionRatio',pwfs.obstructionRatio,...
-                    'binning',pwfs.p_binning);
+                    'binning',pwfs.p_binning,...
+                    'graphicalDisplay',pwfs.graphicalDisplay);
                 pwfs.src = pwfs.src .* pwfs.tel * pwfs_; % propagate through
-                figure
-                subplot(1,3,1)
                 
-                imagesc(pwfs_.camera)
-                frame = pwfs_.camera.frame;
-                frame = utilities.binning(frame,size(pwfs_.camera.frame)/pwfs_.binning);
-                no2 = size(frame,1)/2;
-                frame = mat2cell(frame, [no2 no2], [no2,no2]);
+                if pwfs_.graphicalDisplay == 1 
+                    figure
+                    subplot(1,3,1)
+                    imagesc(pwfs_.camera)
+                end
+
+                frame   = pwfs_.camera.frame;
+                frame   = utilities.binning(frame,size(pwfs_.camera.frame)/pwfs_.binning);
+                no2     = size(frame,1)/2;
+                frame   = mat2cell(frame, [no2 no2], [no2,no2]);
                 totalIntensity4Q = frame{1} + frame{2} + frame{3} + frame{4};
-                subplot(1,3,2)
-                imagesc(pwfs.validDetectorPixels)
-                axis square
+                
+                if pwfs_.graphicalDisplay == 1 
+                    subplot(1,3,2)
+                    imagesc(pwfs.validDetectorPixels)
+                    axis square
+                end
+                
                 pwfs.validDetectorPixels = totalIntensity4Q>pwfs.minLightRatio*max(totalIntensity4Q(:));
-                subplot(1,3,3)
-                imagesc(pwfs.validDetectorPixels)
-                axis square
+
+                if pwfs_.graphicalDisplay == 1
+                    subplot(1,3,3)
+                    imagesc(pwfs.validDetectorPixels)
+                    axis square
+                end
+                
                 pwfs.frameCalibration = pwfs_.camera.frame;
                 
                 %idx = 1:length(pwfs.validDetectorPixels);
@@ -264,7 +280,7 @@ classdef pyramid < handle
             % dimensions.
             if nargin == 3 %select only the nLenslet central pixels
                 idx = 1:length(pwfs.validDetectorPixels);
-                diff = length(idx)-nL;
+                diff = length(idx)-nL/pwfs.binning;
                 idx = idx(diff/2+1:end-diff/2);
                 pwfs.validLenslet = pwfs.validDetectorPixels(idx,idx);
             elseif nargin==2
@@ -379,7 +395,31 @@ classdef pyramid < handle
             pwfs.wvlRange = val;
         end
         
-        
+         %% Get flux
+        function out = flux(pwfs)
+            n = size(pwfs.camera.frame,1)/pwfs.binning;
+            frame = pwfs.camera.frame;
+            frame = (frame - pwfs.flatField)./pwfs.pixelGains;
+            
+            if isfinite(pwfs.framePixelThreshold)
+                frame = frame - pwfs.framePixelThreshold;
+            end
+            frame(frame<0) = 0;
+            I4Q = utilities.binning(frame,size(pwfs.camera.frame)/pwfs.binning);             % binning
+            I4Q = reshape(I4Q,n,n,[]);
+            
+            n = size(I4Q,1);
+            nFrames = size(I4Q,3);
+            if nFrames > 1
+                im = mat2cell(I4Q,[n/2 n/2],[n/2 n/2],nFrames);
+            else
+                im = mat2cell(I4Q,[n/2 n/2],[n/2 n/2]);
+            end
+            
+            I = (im{4} + im{4} + im{4} + im{4});      %
+            out = sum(I(pwfs.validDetectorPixels));
+
+        end
         %% Relay
         % Method that allows compatibility with the overloaded mtimes
         % operator, allowing things like source=(source.*tel)*wfs
@@ -523,7 +563,7 @@ classdef pyramid < handle
         end
         
         %% gain calibration
-        function gainCalibration(pwfs,dSubap)
+        function gainCalibration(pwfs,dSubap,onskyUnits)
             if  nargin == 1
                 dSubap = pwfs.tel.D/pwfs.nLenslet;
             end
@@ -548,20 +588,31 @@ classdef pyramid < handle
             sx = zeros(1,5);
             sy = zeros(1,5);
             for i = 1:5
-                zer.c = (i-3)*0.1/(ngs.waveNumber);
+                zer.c = (i-3)*0.001/(ngs.waveNumber);
                 ngs = ngs.*zer*tel_*pwfs;
                 sx(i) = mean(pwfs.slopes(1:end/2));
                 sy(i) = mean(pwfs.slopes(end/2+1:end));
             end
             if  dSubap < 0
-                Ox_in = 4*(-2:2)*0.1;%/ngs.waveNumber;
+                Ox_in = 4*(-2:2)*0.001;%/ngs.waveNumber;
             else
                 pixelScale = ngs.wavelength/(2*dSubap);
                 D = dSubap*pwfs.nLenslet;
                 %if D ~=tel_.D
                 %    'WARMING: TELESCOPE SIZE AND PIXELSIZE ARE INCOMPATIBLE'
                 %end
-                Ox_in = 4*(-2:2)*0.1/ngs.waveNumber/D/pixelScale;
+                % something weird as unit! Left here for backwards
+                % compatibility reasons
+                Ox_in = 4*(-2:2)*0.001/ngs.waveNumber/D/pixelScale;
+                
+                if nargin == 3
+                    if onskyUnits == 1
+                        %actual phase-difference at the edge of the pupil in
+                        %radians
+                        Ox_in = 4/D*ngs.waveNumber*[(-2:2)*0.001/ngs.waveNumber]; %
+                    end
+                end
+
             end
             Ox_out = sy;
             slopesLinCoef = polyfit(Ox_in,Ox_out,1);
@@ -874,12 +925,18 @@ classdef pyramid < handle
         end
         %% make the pyramid phase mask
         function makePyrMask(pwfs)
-            
+            % NEW CODE TO BE ADOPTED SOON IN REPLACEMENT OF THE REST OF THE
+            % FUNCTION makePyrMask
+            % m = mask(4,pwfs.pxSide,'alpha',pwfs.alpha);
+            % pwfs.pyrMask   = m.theMask;
             if isscalar(pwfs.alpha)
-                l_alpha = ones(1,4)*pwfs.alpha;
+                realAlpha = ones(1,4)*pwfs.alpha;
             else
-                l_alpha = pwfs.alpha;
+                realAlpha = pwfs.alpha;
             end
+            % Complex alpha for PYR surface slope error in 2 directions...
+            imagAlpha = imag(realAlpha);
+            realAlpha = real(realAlpha);
             
             nx = pwfs.rooftop(1);
             ny = pwfs.rooftop(2);
@@ -891,19 +948,19 @@ classdef pyramid < handle
             
             % pyramid face transmitance and phase for fx>=0 & fy>=0
             mask  = graduatedHeaviside(fx,nx).*graduatedHeaviside(fy,nx);
-            phase = -l_alpha(1).*(fx+fy);
+            phase = -realAlpha(1).*(fx+fy) + -imagAlpha(1).*(-fx+fy);
             pym   = mask.*exp(1i.*phase);
             % pyramid face transmitance and phase for fx>=0 & fy<=0
             mask  = graduatedHeaviside(fx,ny).*graduatedHeaviside(-fy,-ny);
-            phase = -l_alpha(2).*(fx-fy);
+            phase = -realAlpha(2).*(fx-fy) + -imagAlpha(2).*(fx+fy);
             pym   = pym + mask.*exp(1i.*phase);
             % pyramid face transmitance and phase for fx<=0 & fy<=0
             mask  = graduatedHeaviside(-fx,-nx).*graduatedHeaviside(-fy,-nx);
-            phase = l_alpha(3).*(fx+fy);
+            phase = realAlpha(3).*(fx+fy) + -imagAlpha(3).*(fx-fy);
             pym   = pym + mask.*exp(1i.*phase);
             % pyramid face transmitance and phase for fx<=0 & fy>=0
             mask  = graduatedHeaviside(-fx,-ny).*graduatedHeaviside(fy,ny);
-            phase = -l_alpha(4).*(-fx+fy);
+            phase = -realAlpha(4).*(-fx+fy) + -imagAlpha(4).*(-fx-fy);
             pym   = pym + mask.*exp(1i.*phase);
             pwfs.pyrMask   = fftshift(pym./sum(abs(pym(:))));
         end

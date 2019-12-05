@@ -1,10 +1,20 @@
-function varargout = bilinearSplineInterpMat(gs,atm,tel,groundGrid)
+function varargout = bilinearSplineInterpMat(gs,atm,tel,groundGrid,tau,overSamp)
 %% BILINEARSPLINEINTERP Bilinear interpolation matrix
 %
 % [H,mask] = bilinearSplineInterpMat(gs,atm,tel,groundGrid) computes the
 % bilinear interpolation matrices for a given system made of source,
 % atmosphere and telescope objects and from the pupil sampling grid at the
 % ground
+
+if nargin > 4 
+    frameTime   = tau;
+else
+    frameTime = 0;
+end
+
+if nargin < 6
+    overSamp   = ones(1,atm.nLayer);
+end
 
 nLayer      = atm.nLayer;
 nGs         = length(gs);
@@ -26,45 +36,80 @@ H    = cell(nGs , nLayer);
 % cell of phase layer mask where the bilinear spline are non-zeros
 mask = cell(1   , nLayer);
 
-fprintf('___ BI-HARMONIC OPERATOR ___\n')
+fprintf('___ BI-LINEAR INTERPOLATION OPERATOR ___\n')
+
 
 for kLayer = 1:nLayer
+    
+    pitchLayer = pitchGround/overSamp(kLayer);
     
     % Layer sampling
     D = atm.layer(kLayer).D;
 %     nPxLayer        = ceil(D/pitchGround) + 1;
-    nPxLayer        = floor(D/pitchGround) + 1;
-    newD = (nPxLayer-1)*pitchGround;
+%    nPxLayer        = floor(D/pitchGround) + 1;
+    nPxLayer        = floor(D/pitchLayer) + 1;
+%    newD = (nPxLayer-1)*pitchGround;
+    newD = (nPxLayer-1)*pitchLayer;
     while newD<D
         nPxLayer        = nPxLayer + 2;
-        newD = (nPxLayer-1)*pitchGround;
+%        newD = (nPxLayer-1)*pitchGround;
+        newD = (nPxLayer-1)*pitchLayer;
     end       
     D = newD;
-    [xLayer,yLayer] = utilities.cartAndPol(nPxLayer,D/2);
-%     [xLayer,yLayer] = meshgrid(linspace(-1,1,nPxLayer)*D/2);
+    ws = atm.layer(kLayer).windSpeed;
+    theta = atm.layer(kLayer).windDirection;
+    deltax = ws*cos(theta)*frameTime;
+    deltay = ws*sin(theta)*frameTime;
+%    [xLayer,yLayer] = utilities.cartAndPol(nPxLayer,D/2);
+     [xLayer,yLayer] = meshgrid(linspace(-1,1,nPxLayer)*D/2);
+
+     xLayer = xLayer - deltax;
+     yLayer = yLayer - deltay;
 
     mask{kLayer} = false;
     
     for kGs=1:nGs
         
         fprintf(' [%d,%d]',kGs,kLayer)
-        
+        titleString = sprintf('guide star %d,layer %d',kGs,kLayer);
         height = atm.layer(kLayer).altitude;
         % pupil center in layer
         beta   = gs(kGs).directionVector*height;
-        
-        if height==0
-            mask{kLayer} = mask{kLayer} | groundGrid;
-            nH = numel(xGround);
-            mH = nPxGround^2;
-            iH = 1:nH;
-            jH = find(groundGrid);
-            sH = ones(1,length(jH));
-            H{kGs,kLayer} = sparse(iH,jH,sH,nH,mH);
-        else
-            H{kGs,kLayer} = bilinearSplineInterp(xLayer,yLayer,pitchGround,xGround - beta(1),yGround - beta(2));
+        scale = 1-height/gs(kGs).height;
+%        if height==0
+%            mask{kLayer} = mask{kLayer} | groundGrid;
+%            nH = numel(xGround);
+%            mH = nPxGround^2;
+%            iH = 1:nH;
+%            jH = find(groundGrid);
+%            sH = ones(1,length(jH));
+%             figure
+%             title(titleString)
+%             hold
+%             H{kGs,kLayer} = sparse(iH,jH,sH,nH,mH);
+%             plot(xLayer(:),yLayer(:),'.')
+%                   plot(xGround*scale+beta(1),yGround*scale+beta(2),'r.')
+
+%         elseif kGs == nGs
+%            % figure
+%            % title(titleString)
+%            % hold
+%             H{kGs,kLayer} = bilinearSplineInterp(xLayer,yLayer,pitchGround,xGround*scale + beta(1)-deltax,yGround*scale + beta(2)-deltay);
+%             mask{kLayer} = mask{kLayer} | ( ~all(H{kGs,kLayer}==0) );
+%        else
+           % figure
+           % title(titleString)
+           % hold
+           %% CC added :: sign + before beta instead of - :: makes the calculation HCphiH' equal to Cxx the spatio-angular covariance matrix
+            %H{kGs,kLayer} = bilinearSplineInterp(xLayer,yLayer,pitchGround,xGround*scale + beta(1),yGround*scale + beta(2));
+            H{kGs,kLayer} = bilinearSplineInterp(xLayer,yLayer,pitchLayer,xGround*scale + beta(1),yGround*scale + beta(2));
             mask{kLayer} = mask{kLayer} | ( ~all(H{kGs,kLayer}==0) );
-        end
+
+                %  plot(xLayer(:),yLayer(:),'.')
+                %  plot(xGround*scale+beta(1),yGround*scale+beta(2),'r.')
+
+%             
+%        end
         
     end
     

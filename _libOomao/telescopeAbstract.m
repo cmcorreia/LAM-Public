@@ -133,7 +133,7 @@ classdef telescopeAbstract < handle
         
         %% Get the logical pupil mask
         function pupilLogical = get.pupilLogical(obj)
-            pupilLogical = logical(obj.pupil>0);
+            pupilLogical = logical(abs(obj.pupil)>0);
         end
         
         %% Get telescope radius
@@ -148,7 +148,7 @@ classdef telescopeAbstract < handle
         
         %% Get telescope surface in pixels
         function out = get.pixelArea(obj)
-            out = sum(obj.pupil(:));
+            out = sum(double(logical(abs(obj.pupil(:)))));
         end
         
         function out = diameterAt(obj,height)
@@ -163,11 +163,15 @@ classdef telescopeAbstract < handle
             obj.p_shape = val;
             obj.p_pupil = [];
         end
+        %% telescope elevation
+        function set.elevation(obj,val)
+            obj.elevation = val;
+        end
         
         function out = zernike(obj,modes,varargin)
             %% ZERNIKE
             
-            out = zernike(modes,obj.D,'resolution',obj.resolution,'pupil',obj.pupil,varargin{:});
+            out = zernike(modes,obj.D,'resolution',obj.resolution,'pupil',double(logical(abs(obj.pupil))),varargin{:});
         end
         
         function reset(obj)
@@ -184,6 +188,15 @@ classdef telescopeAbstract < handle
                 fprintf('   Layer %d:\n',kLayer)
                 fprintf('            -> Computing initial phase screen (D=%3.2fm,n=%dpx) ...',m_atm.layer.D,m_atm.layer.nPixel)
                 obj.atm.layer(kLayer).phase = fourierPhaseScreen(m_atm,m_atm.layer.D,m_atm.layer.nPixel);
+                obj.offSetInMeter{kLayer} = [0 0];
+                obj.count{kLayer} = [0 0];
+                
+                Z = obj.atm.layer(kLayer).phase(obj.innerMask{kLayer}(2:end-1,2:end-1));
+                X = obj.A{kLayer}*Z + obj.B{kLayer}*randn(obj.atm.rngStream,size(obj.B{kLayer},2),1);
+                obj.mapShift{kLayer}(obj.outerMask{kLayer})  = X;
+                obj.mapShift{kLayer}(~obj.outerMask{kLayer}) = obj.atm.layer(kLayer).phase(:);
+
+                
                 fprintf('  Done \n')
             end
         end
@@ -198,6 +211,33 @@ classdef telescopeAbstract < handle
                 %                 fprintf('   Layer %d:\n',kLayer)
                 %                 fprintf('            -> Computing initial phase screen (D=%3.2fm,n=%dpx) ...',m_atm.layer.D,m_atm.layer.nPixel)
                 obj.atm.layer(kLayer).phase = fourierPhaseScreen(m_atm,m_atm.layer.D,m_atm.layer.nPixel);
+                
+                
+                Z = obj.atm.layer(kLayer).phase(obj.innerMask{kLayer}(2:end-1,2:end-1));
+                X = obj.A{kLayer}*Z + obj.B{kLayer}*randn(obj.atm.rngStream,size(obj.B{kLayer},2),1);
+                obj.mapShift{kLayer}(obj.outerMask{kLayer})  = X;
+                obj.mapShift{kLayer}(~obj.outerMask{kLayer}) = obj.atm.layer(kLayer).phase(:);
+                            
+                %                 fprintf('  Done \n')
+            end
+        end
+        
+        function drawOverSize(obj,overSize)
+            %% DRAW Reset the atmosphere phase screens
+            %
+            % draw(obj) reet the phase screens of the layers
+            
+            for kLayer=1:obj.atm.nLayer
+                m_atm = slab(obj.atm,kLayer);
+                %                 fprintf('   Layer %d:\n',kLayer)
+                %                 fprintf('            -> Computing initial phase screen (D=%3.2fm,n=%dpx) ...',m_atm.layer.D,m_atm.layer.nPixel)
+                overSizeFactor=floor(overSize/m_atm.layer.D)+1;
+                Dos = m_atm.layer.D*overSizeFactor;
+                d = m_atm.layer.D/(m_atm.layer.nPixel-1);
+                Nos = round(Dos/d) + 1;
+                
+                phase = fourierPhaseScreen(m_atm,Dos,Nos);
+                obj.atm.layer(kLayer).phase = phase(1:m_atm.layer.nPixel,1:m_atm.layer.nPixel);
                 %                 fprintf('  Done \n')
             end
         end
@@ -367,7 +407,7 @@ classdef telescopeAbstract < handle
                                 yShift = u - stepInPixel(2)*pixelLength;
                                 [xi,yi] = meshgrid(xShift,yShift);
                                 %obj.atm.layer(kLayer).phase = interp2(x0,y0,obj.mapShift{kLayer},xi,yi,'cubic');
-                                onePixelShiftedPhaseScreen = interp2(x0,y0,obj.mapShift{kLayer},xi,yi,'cubic');
+                                onePixelShiftedPhaseScreen = interp2(x0,y0,obj.mapShift{kLayer},xi,yi,'spline');
                                 Z = onePixelShiftedPhaseScreen(obj.innerMask{kLayer}(2:end-1,2:end-1));
                                 if all(abs(leapInPixel)<=1)
                                     %remInPixels = sign(leapInPixel).*(ceil(abs(leapInPixel)) > 1/2) - leapInPixel;%leapInPixel - min(abs(leapInPixel), sign(leapInMeter));%min(abs(1-leapInPixel),1).*sign(leapInMeter);
@@ -558,7 +598,20 @@ classdef telescopeAbstract < handle
             % obj = obj + otherObj adds an other object to the telescope
             % object
             
+            if isa(otherObj,'atmosphere')
+                if ~(obj.elevation == otherObj.zenithAngle)
+                    disp('CAUTION: TELESCOPE ELEVATION AND ATM ZENITH ANGLE NOT THE SAME')
+                end
+            end
+            
             obj.opticalAberration = otherObj;
+            
+             if isa(otherObj,'atmosphere')
+                if ~(obj.elevation == otherObj.zenithAngle)
+                    disp('CAUTION: TELESCOPE ELEVATION AND ATM ZENITH ANGLE NOT THE SAME')
+                end
+            end
+
         end
         
         function obj = minus(obj,otherObj)
@@ -595,9 +648,9 @@ classdef telescopeAbstract < handle
                 % Set mask and pupil first
                 src.mask      = obj.pupilLogical;
                 if isempty(src.nPhoton) || (isempty(obj.samplingTime) || isinf(obj.samplingTime))
-                    src.amplitude = obj.pupil;
+                    src.amplitude = abs(obj.pupil);
                 else
-                    src.amplitude = obj.pupil.*sqrt(obj.samplingTime*src.nPhoton.*obj.area/sum(obj.pupil(:)));
+                    src.amplitude = abs(obj.pupil).*sqrt(obj.samplingTime*src.nPhoton.*obj.area/sum(double(logical(abs(obj.pupil(:))))));
                 end
                 out = 0;
                 if ~isempty(obj.atm) % Set phase if an atmosphere is defined
@@ -619,27 +672,63 @@ classdef telescopeAbstract < handle
                         m_origin = obj.origin;
                         out = zeros(size(src.amplitude,1),size(src.amplitude,2),nLayer);
                         nOut = size(out,1);
-                        parfor kLayer = 1:nLayer
-                            %                             disp(kLayer)
-                            height = altitude_m(kLayer);
-                            %                             sampling = { layerSampling_m{kLayer} , layerSampling_m{kLayer} };
-                            [xs,ys] = meshgrid(layerSampling_m{kLayer});
-                            if height==0 && layersNPixel(kLayer)==nOut
-                                out(:,:,kLayer) = phase_m{kLayer};
-                            else
-                                layerR = R_*(1-height./srcHeight);
-                                u = sampler_m*layerR;
-                                xc = height.*srcDirectionVector1;
-                                yc = height.*srcDirectionVector2;
-                                [xi,yi] = meshgrid(u+xc+m_origin(1),u+yc+m_origin(2));
-                                %                                 disp( [ xc yc ]+layerR )
-                                %                                 out(:,:,kLayer) = spline2(sampling,phase_m{kLayer},{u+yc,u+xc});
-                                % size(linear(xs,ys,phase_m{kLayer},xi,yi))
-                                % size(out(:,:,kLayer))
-                                out(:,:,kLayer) = linear(xs,ys,phase_m{kLayer},xi,yi);
+                        try % check whether a parpool exist or can be created
+                            p = gcp('nocreate');
+                        catch
+                            p = [];
+                        end
+                        if isempty(p)
+                            for kLayer = 1:nLayer
                                 
-                                %                                 F = TriScatteredInterp(xs(:),ys(:),phase_m{kLayer}(:));
-                                %                                 out(:,:,kLayer) = F(xi,yi);
+                                %                             disp(kLayer)
+                                height = altitude_m(kLayer);
+                                %                             sampling = { layerSampling_m{kLayer} , layerSampling_m{kLayer} };
+                                [xs,ys] = meshgrid(layerSampling_m{kLayer});
+                                if height==0 && layersNPixel(kLayer)==nOut
+                                    out(:,:,kLayer) = phase_m{kLayer};
+                                else
+                                    layerR = R_*(1-height./srcHeight);
+                                    u = sampler_m*layerR;
+                                    xc = height.*srcDirectionVector1;
+                                    yc = height.*srcDirectionVector2;
+                                    [xi,yi] = meshgrid(u+xc+m_origin(1),u+yc+m_origin(2));
+                                    %                                 disp( [ xc yc ]+layerR )
+                                    %                                 out(:,:,kLayer) = spline2(sampling,phase_m{kLayer},{u+yc,u+xc});
+                                    % size(linear(xs,ys,phase_m{kLayer},xi,yi))
+                                    % size(out(:,:,kLayer))
+                                    out(:,:,kLayer) = linear(xs,ys,phase_m{kLayer},xi,yi);
+                                    
+                                    %                                 F = TriScatteredInterp(xs(:),ys(:),phase_m{kLayer}(:));
+                                    %                                 out(:,:,kLayer) = F(xi,yi);
+                                end
+                                
+                            end
+                            
+                        else
+                            parfor kLayer = 1:nLayer
+                                
+                                %                             disp(kLayer)
+                                height = altitude_m(kLayer);
+                                %                             sampling = { layerSampling_m{kLayer} , layerSampling_m{kLayer} };
+                                [xs,ys] = meshgrid(layerSampling_m{kLayer});
+                                if height==0 && layersNPixel(kLayer)==nOut
+                                    out(:,:,kLayer) = phase_m{kLayer};
+                                else
+                                    layerR = R_*(1-height./srcHeight);
+                                    u = sampler_m*layerR;
+                                    xc = height.*srcDirectionVector1;
+                                    yc = height.*srcDirectionVector2;
+                                    [xi,yi] = meshgrid(u+xc+m_origin(1),u+yc+m_origin(2));
+                                    %                                 disp( [ xc yc ]+layerR )
+                                    %                                 out(:,:,kLayer) = spline2(sampling,phase_m{kLayer},{u+yc,u+xc});
+                                    % size(linear(xs,ys,phase_m{kLayer},xi,yi))
+                                    % size(out(:,:,kLayer))
+                                    out(:,:,kLayer) = linear(xs,ys,phase_m{kLayer},xi,yi);
+                                    
+                                    %                                 F = TriScatteredInterp(xs(:),ys(:),phase_m{kLayer}(:));
+                                    %                                 out(:,:,kLayer) = F(xi,yi);
+                                end
+                                
                             end
                         end
                         out = sum(out,3);
@@ -647,8 +736,11 @@ classdef telescopeAbstract < handle
                     %                     out = (obj.atm.wavelength/src.wavelength)*out; % Scale the phase according to the src wavelength
                     out = (obj.phaseScreenWavelength/src.wavelength)*out; % Scale the phase according to the src wavelength
                 end
-                src.phase = fresnelPropagation(src,obj) + out/sqrt( cos( obj.elevation ) );
-                if isfinite(src.height);src.amplitude = 1./src.height;end
+                src.phase = fresnelPropagation(src,obj) + out/sqrt( cos( obj.elevation ) )+angle(obj.pupil)*2*pi/src.wavelength;
+                
+                % line commented out to comply with electic field amplitude at the WFS focal plane 12/12/2016, ccorreia
+                %if isfinite(src.height);src.amplitude = 1./src.height;end
+                
                 src.timeStamp = src.timeStamp + obj.samplingTime;
             end
             
@@ -674,9 +766,9 @@ classdef telescopeAbstract < handle
                 % Set mask and pupil first
                 src.mask      = obj.pupilLogical;
                 if isempty(src.nPhoton) || (isempty(obj.samplingTime) || isinf(obj.samplingTime))
-                    src.amplitude = obj.pupil;
+                    src.amplitude = abs(obj.pupil);
                 else
-                    src.amplitude = obj.pupil.*sqrt(obj.samplingTime*src.nPhoton.*obj.area/sum(obj.pupil(:)));
+                    src.amplitude = abs(obj.pupil).*sqrt(obj.samplingTime*src.nPhoton.*obj.area/sum(double(logical(abs(obj.pupil(:))))));
                 end
                 out = 0;
                 if ~isempty(obj.atm) % Set phase if an atmosphere is defined
@@ -723,8 +815,9 @@ classdef telescopeAbstract < handle
                     %                     out = (obj.atm.wavelength/src.wavelength)*out; % Scale the phase according to the src wavelength
                     out = (obj.phaseScreenWavelength/src.wavelength)*out; % Scale the phase according to the src wavelength
                 end
-                src.phase = out/sqrt( cos( obj.elevation ) );
-                if isfinite(src.height);src.amplitude = 1./src.height;end
+                src.phase = out/sqrt( cos( obj.elevation ) )+angle(obj.pupil)*2*pi/src.wavelength;
+                if isfinite(src.height);src.amplitude = 1./src.height;
+                end
                 src.timeStamp = src.timeStamp + obj.samplingTime;
             end
             
@@ -747,9 +840,9 @@ classdef telescopeAbstract < handle
                     src = srcs(kSrc);
                     src.mask      = obj.pupilLogical;
                     if isempty(src.nPhoton)
-                        src.amplitude = obj.pupil;
+                        src.amplitude = abs(obj.pupil);
                     else
-                        src.amplitude = obj.pupil.*sqrt(obj.samplingTime*src.nPhoton.*obj.area/sum(obj.pupil(:)));
+                        src.amplitude = abs(obj.pupil).*sqrt(obj.samplingTime*src.nPhoton.*obj.area/sum(double(logical(abs(obj.pupil(:))))));
                     end
                 end
                 out = 0;
@@ -767,9 +860,9 @@ classdef telescopeAbstract < handle
                     src = srcs(kSrc);
                     src.mask      = obj.pupilLogical;
                     if isempty(src.nPhoton)
-                        src.amplitude = obj.pupil;
+                        src.amplitude = abs(obj.pupil);
                     else
-                        src.amplitude = obj.pupil.*sqrt(obj.samplingTime*src.nPhoton.*obj.area/sum(obj.pupil(:)));
+                        src.amplitude = abs(obj.pupil).*sqrt(obj.samplingTime*src.nPhoton.*obj.area/sum(double(logical(abs(obj.pupil(:))))));
                     end
                     srcDirectionVector1 = src.directionVector(1);
                     srcDirectionVector2 = src.directionVector(2);
@@ -824,7 +917,7 @@ classdef telescopeAbstract < handle
                 end % srcs
             end % atm
             
-            src.phase = fresnelPropagation(src,obj) + out;
+            src.phase = fresnelPropagation(src,obj) + out+angle(obj.pupil)*2*pi/src.wavelength;
             src.timeStamp = src.timeStamp + obj.samplingTime;
             
         end

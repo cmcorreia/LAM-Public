@@ -43,7 +43,8 @@ classdef deformableMirror < handle
         thePokeMatrix;
         % the poke matrix full frame when the WFS is a pyramid
         pokeMatrixFullFrame;
-        
+        % mis registration parameters
+        misReg
         % deformableMirror tag
         tag = 'DEFORMABLE MIRROR';
         % optical equivalent diameter of the DM
@@ -91,13 +92,16 @@ classdef deformableMirror < handle
             p.addParameter('modes', [], @(x) isnumeric(x) || ...
                 (isa(x,'influenceFunction') || isa(x,'gaussianInfluenceFunction') ...
                 || isa(x,'splineInfluenceFunction') || isa(x,'zernike') ...
-                || isa(x,'hexagonalPistonTipTilt')) || isa(x,'differentialGaussianInfluenceFunction'));
+                || isa(x,'hexagonalPistonTipTilt')) || isa(x,'fourierModes')...
+                || isa(x,'xineticsInfluenceFunction'));
             
             p.addParameter('resolution', [], @isnumeric);
             p.addParameter('validActuator', ones(nActuator), @islogical);
             p.addParameter('zLocation', 0, @isnumeric);
             p.addParameter('offset', [0,0], @isnumeric);
             p.addParameter('diameter', [], @isnumeric);
+            p.addParameter('misReg', [], @isstruct);
+
             p.parse(nActuator, varargin{:});
             obj.nActuator         = p.Results.nActuator;
             obj.p_validActuator     = p.Results.validActuator;
@@ -105,9 +109,14 @@ classdef deformableMirror < handle
             obj.zLocation             = p.Results.zLocation;
             setSurfaceListener(obj)
             if ( isa(obj.modes,'influenceFunction') || isa(obj.modes,'hexagonalPistonTipTilt')...
-                    || isa(obj.modes,'gaussianInfluenceFunction') || isa(obj.modes,'differentialGaussianInfluenceFunction') ) && ~isempty(p.Results.resolution)
-                setInfluenceFunction(obj.modes,obj.nActuator,...
+                    || isa(obj.modes,'gaussianInfluenceFunction') || isa(obj.modes,'xineticsInfluenceFunction') ) && ~isempty(p.Results.resolution)
+                if isa(obj.modes,'gaussianInfluenceFunction') % misReg only available for Gaussian IF (CCo 28/01/2019)
+                    setInfluenceFunction(obj.modes,obj.nActuator,...
+                    p.Results.resolution,obj.validActuator,1,p.Results.offset, p.Results.diameter, p.Results.misReg);
+                else
+                    setInfluenceFunction(obj.modes,obj.nActuator,...
                     p.Results.resolution,obj.validActuator,1,p.Results.offset, p.Results.diameter);
+                end
             elseif isa(obj.modes,'zernike')
                 obj.p_validActuator = true(1,obj.modes.nMode);
             end
@@ -359,10 +368,15 @@ classdef deformableMirror < handle
                         pokeMatrix  = zeros(sensor.nSlope,nMode);
                         slopesStats = zeros(3,nMode);
                         %                     fprintf(' . actuators range:          ')
-                        h = waitbar(0,'DM/WFS calibration ...');
+                        if sensor.graphicalDisplay == 1
+                            h = waitbar(0,'DM/WFS calibration ...');
+                        end
+                        
                         while u(end)<nMode
                             u = u(end)+1:min(u(end)+nC,nMode);
-                            waitbar(u(end)/nMode)
+                            if sensor.graphicalDisplay == 1
+                                waitbar(u(end)/nMode)
+                            end
                             fprintf('\b\b\b\b\b\b\b\b\b%4d:%4d',u(1),u(end))
                             obj.coefs = calibDmCommands(:,u);
                             +src;
@@ -380,7 +394,10 @@ classdef deformableMirror < handle
                             slopesStats(u,2) = min(sp);
                             slopesStats(u,3) = std(sp);
                         end
-                        close(h)
+                        if sensor.graphicalDisplay == 1
+                            close(h)
+                        end
+                        
                     end
                     elt = toc(tId);
                     

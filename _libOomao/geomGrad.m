@@ -4,7 +4,13 @@ classdef geomGrad < handle
         resolution;
         pupil;
         edgePix;
-        
+        nSlope;
+        lenslets; % compatibility with the diffractive shackHartmann
+        % wavefront sensor tag
+        % sets the display ON or OFF (useful for cluster execution)
+        graphicalDisplay = 0;
+
+        tag = 'G-SHACK-HARTMANN';
     end
     properties (SetObservable=true)
         % measurements
@@ -22,11 +28,12 @@ classdef geomGrad < handle
             p.addOptional('edgePix', 0, @isnumeric);
             p.parse(validLenslet, pupil,varargin{:});
             
-            obj.validLenslet = validLenslet;
-            obj.resolution  = size(pupil,1);
-            obj.pupil = pupil;
-            obj.edgePix = p.Results.edgePix;
-            
+            obj.validLenslet    = validLenslet;
+            obj.resolution      = size(pupil,1);
+            obj.pupil           = pupil;
+            obj.edgePix         = p.Results.edgePix;
+            obj.nSlope          = sum(validLenslet(:))*2;
+            obj.lenslets.nLenslet= sum(validLenslet(:));
             computeGradOp(obj);
         end
         
@@ -34,7 +41,21 @@ classdef geomGrad < handle
         % Method that allows compatibility with the overloaded mtimes
         % operator, allowing things like source=(source.*tel)*wfs
         function relay(obj, src)
-            obj.slopes = obj.gradOp*src.phase(obj.pupil);
+            nSrc = length([src.nSrc]);
+            obj.slopes = [];
+            nRes = size(src(1).phase,1);
+            if length(size(src(1).phase)) == 3
+                nRes  = size(src(1).phase,1);
+                nActu = size(src(1).phase,3);
+            end
+            for iSrc = 1:nSrc
+                if length(size(src(1).phase)) == 3
+                    ph = reshape(src(iSrc).phase,nRes*nRes,nActu);                    
+                    obj.slopes(:,:,iSrc) = obj.gradOp*ph(obj.pupil(:),:);
+                else
+                    obj.slopes(:,iSrc) = obj.gradOp*src(iSrc).phase(obj.pupil);
+                end
+            end
         end
         
         %% Compute gradients
@@ -43,8 +64,8 @@ classdef geomGrad < handle
             nSlopes   = 2*nnz(obj.validLenslet);
             G         = zeros(nSlopes,nnz(obj.pupil)); iL = 1;
             nLenslet  = size(obj.validLenslet,1);
-            nPx_subap = obj.resolution/nLenslet;
-            nPx_subap2= nPx_subap^2;
+            nPxSubap = obj.resolution/nLenslet;
+            nPxSubap2= nPxSubap^2;
             for j = 1:nLenslet
                 for i = 1:nLenslet
                     % for a valid lenslet
@@ -52,22 +73,22 @@ classdef geomGrad < handle
                         
                         % valid sub-aperture pixels
                         subapMask = zeros(obj.resolution);
-                        subapMask((i-1)*nPx_subap+1:i*nPx_subap,(j-1)*nPx_subap+1:j*nPx_subap) = 1;
+                        subapMask((i-1)*nPxSubap+1:i*nPxSubap,(j-1)*nPxSubap+1:j*nPxSubap) = 1;
                         subapMask = subapMask.*obj.pupil;
                         
                         % X gradients
                         
                         maskLet = zeros(obj.resolution); nPixUsed = 0;
-                        if nnz(subapMask) == nPx_subap2 % fully illuminated sub-aperture
-                            maskLet((i-1)*nPx_subap+1:i*nPx_subap,(j-1)*nPx_subap+1) = -1;
-                            maskLet((i-1)*nPx_subap+1:i*nPx_subap,j*nPx_subap) = 1;
+                        if nnz(subapMask) == nPxSubap2 % fully illuminated sub-aperture
+                            maskLet((i-1)*nPxSubap+1:i*nPxSubap,(j-1)*nPxSubap+1) = -1;
+                            maskLet((i-1)*nPxSubap+1:i*nPxSubap,j*nPxSubap) = 1;
                             if obj.edgePix
-                                nPixUsed = nPx_subap2;
+                                nPixUsed = nPxSubap2;
                             else
-                                nPixUsed = nPx_subap2-nPx_subap;
+                                nPixUsed = nPxSubap2-nPxSubap;
                             end
                         else % partially illuminated sub-aperture
-                            for ik = (i-1)*nPx_subap+1:i*nPx_subap
+                            for ik = (i-1)*nPxSubap+1:i*nPxSubap
                                 lig = subapMask(ik,:);
                                 if nnz(lig) >= 2
                                     jl = find(lig,1,'first');
@@ -79,30 +100,30 @@ classdef geomGrad < handle
                             end
                             
                         end
-                        maskLet = maskLet*nPx_subap/nPixUsed/pi;
+                        maskLet = maskLet*nPxSubap/nPixUsed/pi;
                         % rasterize
                         M = maskLet(:);
                         % keep only valid pixels
                         Mpup = M(obj.pupil,1);
                         % populate gradient matrix
                         if obj.edgePix
-                            G(iL,:) = Mpup'*(nPx_subap/(nPx_subap-1));
+                            G(iL,:) = Mpup'*(nPxSubap/(nPxSubap-1));
                         else
                             G(iL,:) = Mpup';
                         end
                         
                         % Y gradients
                         maskLet = zeros(obj.resolution); nPixUsed = 0;
-                        if nnz(subapMask) == nPx_subap2 % fully illuminated sub-aperture
-                            maskLet((i-1)*nPx_subap+1,(j-1)*nPx_subap+1:j*nPx_subap) = -1;
-                            maskLet(i*nPx_subap, (j-1)*nPx_subap+1:j*nPx_subap) = 1;
+                        if nnz(subapMask) == nPxSubap2 % fully illuminated sub-aperture
+                            maskLet((i-1)*nPxSubap+1,(j-1)*nPxSubap+1:j*nPxSubap) = -1;
+                            maskLet(i*nPxSubap, (j-1)*nPxSubap+1:j*nPxSubap) = 1;
                             if obj.edgePix
-                                nPixUsed = nPx_subap2;
+                                nPixUsed = nPxSubap2;
                             else
-                                nPixUsed = nPx_subap2-nPx_subap;
+                                nPixUsed = nPxSubap2-nPxSubap;
                             end
                         else
-                            for jk = (j-1)*nPx_subap+1:j*nPx_subap
+                            for jk = (j-1)*nPxSubap+1:j*nPxSubap
                                 col = subapMask(:,jk);
                                 if nnz(col) >= 2
                                     ih = find(col,1,'first');
@@ -113,14 +134,14 @@ classdef geomGrad < handle
                                 end
                             end
                         end
-                        maskLet = maskLet*nPx_subap/nPixUsed/pi;
+                        maskLet = maskLet*nPxSubap/nPixUsed/pi;
                         % rasterize
                         M = maskLet(:);
                         % keep only valid pixels
                         Mpup = M(obj.pupil,1);
                         % populate gradient matrix
                         if obj.edgePix
-                            G(iL+nSlopes/2,:) = Mpup'*(nPx_subap/(nPx_subap-1));
+                            G(iL+nSlopes/2,:) = Mpup'*(nPxSubap/(nPxSubap-1));
                         else
                             G(iL+nSlopes/2,:) = Mpup';
                         end

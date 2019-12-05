@@ -187,8 +187,9 @@ classdef detector < handle
             val = obj.p_exposureTime;
         end
         
+        %% Displays detector frame
         function imagesc(obj,varargin)
-            %% IMAGESC Display the detector frame
+            % IMAGESC Display the detector frame
             %
             % imagesc(obj) displays the frame of the detector object
             %
@@ -301,7 +302,7 @@ classdef detector < handle
             srcLastPath = src.opticalPath{end-1};
             switch class(srcLastPath) 
                 case 'telescope'
-                    f = utilities.cartAndPol(obj.resolution(1),...
+                    f = tools.cartAndPol(obj.resolution(1),...
                         'output','radius');
                     % pixel scale in radian
                     f = obj.pixelScale*f.*(obj.resolution(1)-1)./src.wavelength/2;
@@ -335,178 +336,178 @@ classdef detector < handle
             %             image = image;%This is now done in telescope.relay (.*obj.exposureTime;) % flux integration
             
             % convolution by extended LGS kernel
-%             if ~isempty(obj.spotsLgsSrcKernel) || ~isempty(obj.fftSpotsLgsSrcKernel)
-%                 [n,m,p] = size(image);
-%                 nLenslet = sqrt(size(obj.spotsLgsSrcKernel, 3));
-%                 nPxDetector = obj.resolution(1) / nLenslet;
-%                 if mod(nPxDetector,2)
-%                     compShift = 0;
-%                 else
-%                     compShift = 0;
-%                 end
-%                 if length(size(image)) == 2 % regular case
-%                     nArray = m/n;
-%                 elseif length(size(image)) == 3 % calibration matrix case
-%                     nArray = p;
-%                 end
-%                 
-%                 for iArray = 1:nArray
-%                     if length(size(image)) == 2 % regular case
-%                         tmp = image(:, (iArray-1)*n + [1:n]);
-%                     elseif length(size(image)) == 3 % DM calibration matrix case
-%                         tmp = image(:,:, iArray);
-%                     end
-%                     
-%                     [nPx,mPx,nPicture] = size(tmp);
-%                     nPxLenslet = nPx/nLenslet;
-%                     mPxLenslet = mPx/nLenslet;
-%                     mPxNPicture = mPx*nPicture;
-%                     tmp = reshape(tmp,nPx,mPxNPicture);
-%                     nLensletArray = nArray*nPicture;
-%                     
-%                     indexRasterLenslet_ ...
-%                         = utilities.rearrange(size(tmp),[nPxLenslet,mPxLenslet]);
-%                     %                 v = ~obj.validLenslet(:);
-%                     %                 v = repmat(v,nLensletArray,1);
-%                     %                 indexRasterLenslet_(:,v) = [];
-%                     buffer     = tmp(indexRasterLenslet_);
-%                     buffer     = reshape(buffer,nPxLenslet,nPxLenslet,[]);
-%                     %buffer = lamTools.crop(buffer, nPxDetector);
-%                     bufferDetect = zeros(nPxDetector, nPxDetector, nLenslet^2);
-%                     
-%                     % create local variables to avoid object deletion in
-%                     % parfor loop
-%                     binningFactor = obj.binningFactor;
-%                     offSetSpotsLgsSrcKernel = obj.offSetSpotsLgsSrcKernel;
-%                     spotsLgsSrcKernel = obj.spotsLgsSrcKernel;
-%                     fftSpotsLgsSrcKernel = obj.fftSpotsLgsSrcKernel;
-%                     
-%                     parfor ii = 1:nLenslet^2
-%                         if ~isempty(offSetSpotsLgsSrcKernel)
-%                             % shifts from geometric SH
-%                             subap = buffer(:,:,ii);
-%                             nPhotons = sum(subap(:));
-%                             if length(size(image)) == 2 % regular case
-%                                 bufferDetect(:,:,ii) = lamTools.crop(lamTools.shift(spotsLgsSrcKernel(:,:,ii,iArray),...
-%                                     offSetSpotsLgsSrcKernel(ii,iArray)+compShift / binningFactor,...
-%                                     offSetSpotsLgsSrcKernel(ii+nLenslet^2,iArray)+compShift / binningFactor), nPxDetector);
-%                                 % check compShift / binningFactor
-%                                 bufferDetect(:,:,ii) = bufferDetect(:,:,ii) .* (bufferDetect(:,:,ii)>=0);
-%                             elseif length(size(image)) == 3 % for calibration matrix
-%                                 bufferDetect(:,:,ii) = lamTools.crop(lamTools.shift(spotsLgsSrcKernel(:,:,ii),...
-%                                     offSetSpotsLgsSrcKernel(ii)+compShift / binningFactor,...
-%                                     offSetSpotsLgsSrcKernel(ii+nLenslet^2)+compShift / binningFactor), nPxDetector);
-%                                 bufferDetect(:,:,ii) = bufferDetect(:,:,ii) .* (bufferDetect(:,:,ii)>=0);
-%                             end
-%                             
-%                             bufferDetect(:,:,ii) = bufferDetect(:,:,ii) / sum(sum(bufferDetect(:,:,ii))) * nPhotons;
-%                         else
-%                             convMethod = 'conv';
-%                             if length(size(image)) == 2 % regular case   
-%                                 switch convMethod
-%                                     case 'truncatedFFT'
-% %                                         convTime = ones(1000, 1);
-% %                                         for iTime = 1:1000
-% %                                         a = tic;
-%                                         kTilda = fftSpotsLgsSrcKernel(:,:,ii, iArray);
-%                                         h = buffer(:,:,ii);
-%                                         fftSize = length(kTilda)*binningFactor;
-%                                         hTilda = lamTools.crop(fftshift(fft2(lamTools.crop(h, fftSize))), length(kTilda));
-%                                         % hTilda = lamTools.crop(fftshift(fft2(lamTools.crop(h, length(kTilda)*binningFactor))), length(kTilda));
-%                                         subap = fftshift(abs(ifft2(hTilda .* kTilda)));%, fftSize, fftSize));
-%                                         bufferDetect(:,:,ii) = lamTools.crop(subap, nPxDetector);
-%                                         % subapTrunc = bufferDetect(:,:,ii);
-% %                                         convTime(iTime) = toc(a);
-% %                                         end
-% %                                         mean(convTime)*1000
-%                                         
-%                                     case 'FFT'                                        
-%                                         % TO BE DEBUGGED
-%                                         binnedKernel = padArray2(spotsLgsSrcKernel(:,:,ii, iArray), binningFactor, binningFactor) / binningFactor^2; % kernel is expanded to lenslets pixelScale
-%                                         convKernel = abs(fftshift(ifft2(fft2(buffer(:,:,ii)) .* fft2(binnedKernel, nPxLenslet, nPxLenslet))));% to be implemented
-%                                         nCrop = nPxDetector * binningFactor;
-%                                         convKernel = lamTools.crop(convKernel, nCrop(1)); % the convolved spot is binned to the WFS pixelScale
-%                                         bufferDetect(:,:,ii) = lamTools.crop(utilities.binning(convKernel, size(convKernel) / binningFactor), nPxDetector);
-%                                         %subapFFT = bufferDetect(:,:,ii);
-%                                     case 'conv'
-% %                                          convTime = ones(1000, 1);
-% %                                         for iTime = 1:1000
-% %                                             a = tic;
-%                                         binnedKernel = padArray2(spotsLgsSrcKernel(:,:,ii, iArray), binningFactor, binningFactor) / binningFactor^2; % kernel is expanded to lenslets pixelScale
-%                                         if length(buffer(:,:,ii)) >= length(binnedKernel)
-%                                             convKernel = conv2(buffer(:,:,ii), binnedKernel, 'same'); % convolution is performed at the lenslet pixelScale to preserve the lenslet PSF resolution;
-%                                         else
-%                                             convKernel = conv2(binnedKernel, buffer(:,:,ii), 'same');
+            if ~isempty(obj.spotsLgsSrcKernel) || ~isempty(obj.fftSpotsLgsSrcKernel)
+                [n,m,p] = size(image);
+                nLenslet = sqrt(size(obj.spotsLgsSrcKernel, 3));
+                nPxDetector = obj.resolution(1) / nLenslet;
+                if mod(nPxDetector,2)
+                    compShift = 0;
+                else
+                    compShift = 0;
+                end
+                if length(size(image)) == 2 % regular case
+                    nArray = m/n;
+                elseif length(size(image)) == 3 % calibration matrix case
+                    nArray = p;
+                end
+                
+                for iArray = 1:nArray
+                    if length(size(image)) == 2 % regular case
+                        tmp = image(:, (iArray-1)*n + [1:n]);
+                    elseif length(size(image)) == 3 % DM calibration matrix case
+                        tmp = image(:,:, iArray);
+                    end
+                    
+                    [nPx,mPx,nPicture] = size(tmp);
+                    nPxLenslet = nPx/nLenslet;
+                    mPxLenslet = mPx/nLenslet;
+                    mPxNPicture = mPx*nPicture;
+                    tmp = reshape(tmp,nPx,mPxNPicture);
+                    nLensletArray = nArray*nPicture;
+                    
+                    indexRasterLenslet_ ...
+                        = tools.rearrange(size(tmp),[nPxLenslet,mPxLenslet]);
+                    %                 v = ~obj.validLenslet(:);
+                    %                 v = repmat(v,nLensletArray,1);
+                    %                 indexRasterLenslet_(:,v) = [];
+                    buffer     = tmp(indexRasterLenslet_);
+                    buffer     = reshape(buffer,nPxLenslet,nPxLenslet,[]);
+                    %buffer = tools.crop(buffer, nPxDetector);
+                    bufferDetect = zeros(nPxDetector, nPxDetector, nLenslet^2);
+                    
+                    % create local variables to avoid object deletion in
+                    % parfor loop
+                    binningFactor = obj.binningFactor;
+                    offSetSpotsLgsSrcKernel = obj.offSetSpotsLgsSrcKernel;
+                    spotsLgsSrcKernel = obj.spotsLgsSrcKernel;
+                    fftSpotsLgsSrcKernel = obj.fftSpotsLgsSrcKernel;
+                    
+                    parfor ii = 1:nLenslet^2
+                        if ~isempty(offSetSpotsLgsSrcKernel)
+                            % shifts from geometric SH
+                            subap = buffer(:,:,ii);
+                            nPhotons = sum(subap(:));
+                            if length(size(image)) == 2 % regular case
+                                bufferDetect(:,:,ii) = tools.crop(tools.shift(spotsLgsSrcKernel(:,:,ii,iArray),...
+                                    offSetSpotsLgsSrcKernel(ii,iArray)+compShift / binningFactor,...
+                                    offSetSpotsLgsSrcKernel(ii+nLenslet^2,iArray)+compShift / binningFactor), nPxDetector);
+                                % check compShift / binningFactor
+                                bufferDetect(:,:,ii) = bufferDetect(:,:,ii) .* (bufferDetect(:,:,ii)>=0);
+                            elseif length(size(image)) == 3 % for calibration matrix
+                                bufferDetect(:,:,ii) = tools.crop(tools.shift(spotsLgsSrcKernel(:,:,ii),...
+                                    offSetSpotsLgsSrcKernel(ii)+compShift / binningFactor,...
+                                    offSetSpotsLgsSrcKernel(ii+nLenslet^2)+compShift / binningFactor), nPxDetector);
+                                bufferDetect(:,:,ii) = bufferDetect(:,:,ii) .* (bufferDetect(:,:,ii)>=0);
+                            end
+                            
+                            bufferDetect(:,:,ii) = bufferDetect(:,:,ii) / sum(sum(bufferDetect(:,:,ii))) * nPhotons;
+                        else
+                            convMethod = 'conv';
+                            if length(size(image)) == 2 % regular case   
+                                switch convMethod
+                                    case 'truncatedFFT'
+%                                         convTime = ones(1000, 1);
+%                                         for iTime = 1:1000
+%                                         a = tic;
+                                        kTilda = fftSpotsLgsSrcKernel(:,:,ii, iArray);
+                                        h = buffer(:,:,ii);
+                                        fftSize = length(kTilda)*binningFactor;
+                                        hTilda = tools.crop(fftshift(fft2(tools.crop(h, fftSize))), length(kTilda));
+                                        % hTilda = tools.crop(fftshift(fft2(tools.crop(h, length(kTilda)*binningFactor))), length(kTilda));
+                                        subap = fftshift(abs(ifft2(hTilda .* kTilda)));%, fftSize, fftSize));
+                                        bufferDetect(:,:,ii) = tools.crop(subap, nPxDetector);
+                                        % subapTrunc = bufferDetect(:,:,ii);
+%                                         convTime(iTime) = toc(a);
 %                                         end
-%                                         % convKernel = lamTools.shift(convKernel, (0.5-compShift) * binningFactor, (0.5-compShift) * binningFactor);
-%                                         %convKernel = lamTools.shift(convKernel, -4/binningFactor, -4/binningFactor);
-%                                         nCrop = nPxDetector * binningFactor;
-%                                         convKernel = lamTools.crop(convKernel, nCrop(1)); % the convolved spot is binned to the WFS pixelScale
-%                                         bufferDetect(:,:,ii) = lamTools.crop(utilities.binning(convKernel, size(convKernel) / binningFactor), nPxDetector);
-%                                         %subapConv = bufferDetect(:,:,ii);
-% %                                           convTime(iTime) = toc(a);
-% %                                         end
-% %                                         mean(convTime)*1000
-%                                 end
-%                                 
-%                             elseif length(size(image)) == 3 % for calibration matrix
-%                                 
-%                                 switch convMethod
-%                                     case 'truncatedFFT'
-%                                         kTilda = fftSpotsLgsSrcKernel(:,:,ii);
-%                                         h = buffer(:,:,ii);
-%                                         fftSize = length(kTilda)*binningFactor;
-%                                         hTilda = lamTools.crop(fftshift(fft2(lamTools.crop(h, fftSize))), length(kTilda));
-%                                         % hTilda = lamTools.crop(fftshift(fft2(lamTools.crop(h, length(kTilda)*binningFactor))), length(kTilda));
-%                                         subap = fftshift(abs(ifft2(hTilda .* kTilda)));%, fftSize, fftSize));
-%                                         bufferDetect(:,:,ii) = lamTools.crop(subap, nPxDetector);
-%                                         
-%                                     case 'FFT'
-%                                         % TO BE DEBUGGED
-%                                         binnedKernel = padArray2(spotsLgsSrcKernel(:,:,ii), binningFactor, binningFactor) / binningFactor^2; % kernel is expanded to lenslets pixelScale
-%                                         convKernel = abs(fftshift(ifft2(fft2(buffer(:,:,ii)) .* fft2(binnedKernel, nPxLenslet, nPxLenslet))));% to be implemented
-%                                         nCrop = nPxDetector * binningFactor;
-%                                         convKernel = lamTools.crop(convKernel, nCrop(1)); % the convolved spot is binned to the WFS pixelScale
-%                                         bufferDetect(:,:,ii) = lamTools.crop(utilities.binning(convKernel, size(convKernel) / binningFactor), nPxDetector);
-%                                         % subapFFT = bufferDetect(:,:,ii);
-%                                     case 'conv'
-%                                         binnedKernel = padArray2(spotsLgsSrcKernel(:,:,ii), binningFactor, binningFactor) / binningFactor^2; % kernel is expanded to lenslets pixelScale
-%                                         convKernel = conv2(buffer(:,:,ii), binnedKernel); % convolution is performed at the lenslet pixelScale to preserve the lenslet PSF resolution;
-%                                         % convKernel = lamTools.shift(convKernel, (0.5-compShift) * binningFactor, (0.5-compShift) * binningFactor);
-%                                         nCrop = nPxDetector * binningFactor;
-%                                         convKernel = lamTools.crop(convKernel, nCrop(1)); % the convolved spot is binned to the WFS pixelScale
-%                                         bufferDetect(:,:,ii) = lamTools.crop(utilities.binning(convKernel, size(convKernel) / binningFactor), nPxDetector);
-%                                         % subapConv = bufferDetect(:,:,ii);
-%                                 end
-%                                 
-% %                                 binnedKernel = padArray2(spotsLgsSrcKernel(:,:,ii), binningFactor, binningFactor) / binningFactor^2;
-% %                                 convKernel = conv2(buffer(:,:,ii), binnedKernel);
-% %                                 %convKernel = lamTools.shift(convKernel, (0.5-compShift) * binningFactor, (0.5-compShift) * binningFactor);
-% %                                 nCrop = nPxDetector * binningFactor;
-% %                                 convKernel = lamTools.crop(convKernel, nCrop(1));
-% %                                 bufferDetect(:,:,ii) = lamTools.crop(utilities.binning(convKernel, size(convKernel) / binningFactor), nPxDetector);
-%                             end
-%                         end
-%                     end
-%                     
-%                     
-%                     indexRasterDetector = utilities.rearrange(obj.resolution,[nPxDetector,nPxDetector]);
-%                     tmpDetector(indexRasterDetector) = bufferDetect;
-%                     tmpDetector = reshape(tmpDetector , obj.resolution(1) , obj.resolution(2) , nPicture);
-%                     if length(size(image)) == 2
-%                         output(:, (iArray-1)*obj.resolution(1) + [1:obj.resolution(1)]) = tmpDetector;
-%                     elseif length(size(image)) == 3
-%                         output(:,:, iArray) = tmpDetector;
-%                     end
-%                 end
-%                 image = output;
-%             end
+%                                         mean(convTime)*1000
+                                        
+                                    case 'FFT'                                        
+                                        % TO BE DEBUGGED
+                                        binnedKernel = padArray2(spotsLgsSrcKernel(:,:,ii, iArray), binningFactor, binningFactor) / binningFactor^2; % kernel is expanded to lenslets pixelScale
+                                        convKernel = abs(fftshift(ifft2(fft2(buffer(:,:,ii)) .* fft2(binnedKernel, nPxLenslet, nPxLenslet))));% to be implemented
+                                        nCrop = nPxDetector * binningFactor;
+                                        convKernel = tools.crop(convKernel, nCrop(1)); % the convolved spot is binned to the WFS pixelScale
+                                        bufferDetect(:,:,ii) = tools.crop(tools.binning(convKernel, size(convKernel) / binningFactor), nPxDetector);
+                                        %subapFFT = bufferDetect(:,:,ii);
+                                    case 'conv'
+%                                          convTime = ones(1000, 1);
+%                                         for iTime = 1:1000
+%                                             a = tic;
+                                        binnedKernel = padArray2(spotsLgsSrcKernel(:,:,ii, iArray), binningFactor, binningFactor) / binningFactor^2; % kernel is expanded to lenslets pixelScale
+                                        if length(buffer(:,:,ii)) >= length(binnedKernel)
+                                            convKernel = conv2(buffer(:,:,ii), binnedKernel, 'same'); % convolution is performed at the lenslet pixelScale to preserve the lenslet PSF resolution;
+                                        else
+                                            convKernel = conv2(binnedKernel, buffer(:,:,ii), 'same');
+                                        end
+                                        % convKernel = tools.shift(convKernel, (0.5-compShift) * binningFactor, (0.5-compShift) * binningFactor);
+                                        %convKernel = tools.shift(convKernel, -4/binningFactor, -4/binningFactor);
+                                        nCrop = nPxDetector * binningFactor;
+                                        convKernel = tools.crop(convKernel, nCrop(1)); % the convolved spot is binned to the WFS pixelScale
+                                        bufferDetect(:,:,ii) = tools.crop(tools.binning(convKernel, size(convKernel) / binningFactor), nPxDetector);
+                                        %subapConv = bufferDetect(:,:,ii);
+%                                           convTime(iTime) = toc(a);
+%                                         end
+%                                         mean(convTime)*1000
+                                end
+                                
+                            elseif length(size(image)) == 3 % for calibration matrix
+                                
+                                switch convMethod
+                                    case 'truncatedFFT'
+                                        kTilda = fftSpotsLgsSrcKernel(:,:,ii);
+                                        h = buffer(:,:,ii);
+                                        fftSize = length(kTilda)*binningFactor;
+                                        hTilda = tools.crop(fftshift(fft2(tools.crop(h, fftSize))), length(kTilda));
+                                        % hTilda = tools.crop(fftshift(fft2(tools.crop(h, length(kTilda)*binningFactor))), length(kTilda));
+                                        subap = fftshift(abs(ifft2(hTilda .* kTilda)));%, fftSize, fftSize));
+                                        bufferDetect(:,:,ii) = tools.crop(subap, nPxDetector);
+                                        
+                                    case 'FFT'
+                                        % TO BE DEBUGGED
+                                        binnedKernel = padArray2(spotsLgsSrcKernel(:,:,ii), binningFactor, binningFactor) / binningFactor^2; % kernel is expanded to lenslets pixelScale
+                                        convKernel = abs(fftshift(ifft2(fft2(buffer(:,:,ii)) .* fft2(binnedKernel, nPxLenslet, nPxLenslet))));% to be implemented
+                                        nCrop = nPxDetector * binningFactor;
+                                        convKernel = tools.crop(convKernel, nCrop(1)); % the convolved spot is binned to the WFS pixelScale
+                                        bufferDetect(:,:,ii) = tools.crop(tools.binning(convKernel, size(convKernel) / binningFactor), nPxDetector);
+                                        % subapFFT = bufferDetect(:,:,ii);
+                                    case 'conv'
+                                        binnedKernel = padArray2(spotsLgsSrcKernel(:,:,ii), binningFactor, binningFactor) / binningFactor^2; % kernel is expanded to lenslets pixelScale
+                                        convKernel = conv2(buffer(:,:,ii), binnedKernel); % convolution is performed at the lenslet pixelScale to preserve the lenslet PSF resolution;
+                                        % convKernel = tools.shift(convKernel, (0.5-compShift) * binningFactor, (0.5-compShift) * binningFactor);
+                                        nCrop = nPxDetector * binningFactor;
+                                        convKernel = tools.crop(convKernel, nCrop(1)); % the convolved spot is binned to the WFS pixelScale
+                                        bufferDetect(:,:,ii) = tools.crop(tools.binning(convKernel, size(convKernel) / binningFactor), nPxDetector);
+                                        % subapConv = bufferDetect(:,:,ii);
+                                end
+                                
+%                                 binnedKernel = padArray2(spotsLgsSrcKernel(:,:,ii), binningFactor, binningFactor) / binningFactor^2;
+%                                 convKernel = conv2(buffer(:,:,ii), binnedKernel);
+%                                 %convKernel = tools.shift(convKernel, (0.5-compShift) * binningFactor, (0.5-compShift) * binningFactor);
+%                                 nCrop = nPxDetector * binningFactor;
+%                                 convKernel = tools.crop(convKernel, nCrop(1));
+%                                 bufferDetect(:,:,ii) = tools.crop(tools.binning(convKernel, size(convKernel) / binningFactor), nPxDetector);
+                            end
+                        end
+                    end
+                    
+                    
+                    indexRasterDetector = tools.rearrange(obj.resolution,[nPxDetector,nPxDetector]);
+                    tmpDetector(indexRasterDetector) = bufferDetect;
+                    tmpDetector = reshape(tmpDetector , obj.resolution(1) , obj.resolution(2) , nPicture);
+                    if length(size(image)) == 2
+                        output(:, (iArray-1)*obj.resolution(1) + [1:obj.resolution(1)]) = tmpDetector;
+                    elseif length(size(image)) == 3
+                        output(:,:, iArray) = tmpDetector;
+                    end
+                end
+                image = output;
+            end
             % end of convolution
             
             [n,m,~] = size(image);
             if any(n>obj.resolution(1))
                 %                 disp('Binning')
-                image = utilities.binning(image,obj.resolution.*[n,m]/n);
+                image = tools.binning(image,obj.resolution.*[n,m]/n);
             end
             
             
@@ -526,17 +527,17 @@ classdef detector < handle
             %                     nLensletArray = nArray*nPicture;
             %
             %                     indexRasterLenslet_ ...
-            %                         = utilities.rearrange(size(tmp),[nPxLenslet,mPxLenslet]);
+            %                         = tools.rearrange(size(tmp),[nPxLenslet,mPxLenslet]);
             %                     %                 v = ~obj.validLenslet(:);
             %                     %                 v = repmat(v,nLensletArray,1);
             %                     %                 indexRasterLenslet_(:,v) = [];
             %                     buffer     = tmp(indexRasterLenslet_);
             %                     buffer     = reshape(buffer,nPxLenslet,nPxLenslet,[]);
-            %                     buffer = lamTools.crop(buffer, nPxDetector);
+            %                     buffer = tools.crop(buffer, nPxDetector);
             %                     for ii = 1:nLenslet^2
-            %                         buffer(:,:,ii) = lamTools.crop(conv2(buffer(:,:,ii), obj.spotsLgsSrcKernel(:,:,ii, iArray), 'same'), nPxDetector);
+            %                         buffer(:,:,ii) = tools.crop(conv2(buffer(:,:,ii), obj.spotsLgsSrcKernel(:,:,ii, iArray), 'same'), nPxDetector);
             %                     end
-            %                     indexRasterDetector = utilities.rearrange(obj.resolution,[nPxDetector,nPxDetector]);
+            %                     indexRasterDetector = tools.rearrange(obj.resolution,[nPxDetector,nPxDetector]);
             % %                     tmp(indexRasterLenslet_) = buffer;
             % %                     tmp = reshape(tmp , nPx , mPx , nPicture);
             %                     tmpDetector(indexRasterDetector) = buffer;

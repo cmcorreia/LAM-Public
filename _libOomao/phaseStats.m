@@ -207,7 +207,77 @@ classdef phaseStats
             layers = atm.layer;
             out = sum([layers.fractionnalR0]).*out;
         end
+        function S = ampSpectrum(f,atm)
+            %% SPECTRUM Amplitude power spectrum density
+            %
+            % out = phaseStats.ampSpectrum(f,atm) computes the amplitude power
+            % spectrum density from the spatial frequency f and an
+            % atmosphere object
+            %
+            % See also atmosphere
+            [~,Y] = phaseStats.fresnel(f, atm);
+            S = phaseStats.spectrum(f,atm).*Y;
+        end
+        
+        function [O,S] = fresnel(f, atm)
+            %% Fresnel phase and amplitude factors when propagating through a stratified turbulence
+            O = zeros(size(f));
+            for kLayer = 1:atm.nLayer
+                O = O + atm.layer(kLayer).fractionnalR0.*cos(pi*atm.altitudeAtZenith(kLayer)*f.^2*atm.wavelength).^2;
+            end
+            S = 1-O;
+        end
+        function [O,S] = chromaticity(f, atm, wvl1, wvl2)
+            %% Fresnel phase and amplitude differential chromaticity when propagating through a stratified turbulence
+            O = zeros(size(f));
+            S = O;
+            for kLayer = 1:atm.nLayer
+                O = O + atm.layer(kLayer).fractionnalR0.*(cos(pi*atm.altitudeAtZenith(kLayer)*f.^2*wvl1) - ...
+                    cos(pi*atm.altitudeAtZenith(kLayer)*f.^2*wvl2)).^2;
+                S = S + atm.layer(kLayer).fractionnalR0.*(sin(pi*atm.altitudeAtZenith(kLayer)*f.^2*wvl1) - ...
+                    sin(pi*atm.altitudeAtZenith(kLayer)*f.^2*wvl2)).^2;
+            end
+        end
+        
+        function [O, S] = dispersionDisplacement(f, atm, theta)
+            %% Differential refraction of the atmosphere that induces a
+            % beam-shift thus becomes akin to an anisoplanatic error
             
+            src = source('zenith',theta);
+            zLayer = [atm.layer.altitude];
+            fr0    = [atm.layer.fractionnalR0];
+            A = zeros(size(f));
+            for kLayer=1:atm.nLayer
+                red = 2*pi*zLayer(kLayer)*...
+                    ( f*src.directionVector(1) );
+                A  = A + fr0(kLayer)*exp(1i*red);
+            end
+            O = (2-A-conj(A)).*phaseStats.spectrum(f, atm);
+            S = (2-A-conj(A)).*phaseStats.ampSpectrum(f, atm);
+        end
+        
+        function [O, S] = correctionChromatism(f, atm, wvl1, wvl2)
+            %% OPD PSD due to differential atmospheric refraction
+            % Edlen 1966, Hardy Eq. 3.16, Fusco06 Eq. 8, Guyon 05 Eq. 28
+            n     = @(x) ...%1.0 ...
+                + 8.34213e-5 + 0.0240603/(130-x^2)+ 0.00015997/(38.9-x^2); % Hardy Eq. (3.16). Inex of refraction (and not refractivity) variations at standard temperature and pressure
+            wvl1InMicrons = wvl1*1e6;
+            wvl2InMicrons = wvl2*1e6;
+            O = phaseStats.spectrum(f, atm).*...
+                ((n(wvl1InMicrons) - n(wvl2InMicrons))/n(wvl2InMicrons))^2;
+            S = phaseStats.ampSpectrum(f, atm).*...
+                ((n(wvl1InMicrons) - n(wvl2InMicrons))/n(wvl2InMicrons))^2;
+            % The TFusco06 implementation in Eq 12 & 13 give the same result
+            % as above
+            %            nAverage = (n(wvl1InMicrons) + n(wvl2InMicrons))/2;
+            %             DeltaWvl1 = abs(n(wvl1InMicrons) - nAverage);
+            %             DeltaWvl2 = abs(n(wvl2InMicrons) - nAverage);
+            %             alpha = DeltaWvl2/DeltaWvl1;
+            %            alpha = n(wvl1InMicrons)/n(wvl2InMicrons);
+            %            out = ((alpha-1)/alpha)^2*phaseStats.spectrum(f, atm);
+            
+        end
+   
         function out = temporalSpectrum(nu,atm)
             %% TEMPORALSPECTRUM Phase temporal power spectrum density
             %
@@ -1170,7 +1240,7 @@ classdef phaseStats
             % the covariance matrix between Zernike coefficients of Zernike
             % polynomials zern corresponding to wavefront propagating from
             % two sources src(1) and src(2) through the atmosphere atm
-            %
+            %atm
             % See also zernike, atmosphere, source
             
             nGs = numel(src);
@@ -1204,7 +1274,16 @@ classdef phaseStats
                     end
                     aiaj(mask) = buffer;
                     index = cellfun(@isempty,aiaj);
-                    aiaj(index) = cellfun(@transpose,aiaj(triu(~index,1)),'UniformOutput',false);
+                    % address cells colums-wise, otherwise aiaj fails to be
+                    % symmetric
+                    [r,c] = find(triu(~index,1));
+                    [r,s] = sort(r);
+                    blocks = sub2ind(size(index),r,c(s));
+                    aiaj(index) = cellfun(@transpose,aiaj(blocks),'UniformOutput',false);
+                    
+                    %index = cellfun(@isempty,aiaj);
+                    %aiaj(index) = cellfun(@transpose,aiaj(triu(~index,1)),'UniformOutput',false);
+                    
                 else % a cross-correlation meta-matrix
 %                     disp('@(phaseStats.zernikeAngularCovariance)> CROSS CORRELATION META-MATRIX:')
                     iSrc = src;
@@ -1229,7 +1308,7 @@ classdef phaseStats
                 end
 %                 aiaj = cell2mat(aiaj);
             else
-                if src(1)==src(2)
+                if src(1)==src(2) && all( isinf( [src(1).height src(2).height] ) )
                     aiaj = phaseStats.zernikeCovariance(zern,atm);
                 else
                     R   = zern.R;
@@ -1320,8 +1399,10 @@ classdef phaseStats
                     red = sl(kLayer).*x;
 %                     phasePSD = phaseStats.spectrum(0.5*x/pi,atmLayers{kLayer});
                     f = 0.5*x/pi;
+                    %phasePSD = atm.layer(kLayer).fractionnalR0.*...
+                    %    psdCst.*(f.^2 + 1./atm.L0.^2).^(-11./6);
                     phasePSD = atm.layer(kLayer).fractionnalR0.*...
-                        psdCst.*(f.^2 + 1./atm.L0.^2).^(-11./6);
+                        psdCst.*(f.^2 + 1./atm.layer(kLayer).layeredL0.^2).^(-11./6);
 %                     phasePSD = phaseStats.spectrum(0.5*x/pi,atm.slab(lLayer));
                     besselsRadialOrder = besselj(ni+1,red1).*besselj(nj+1,red2);
                     tripleBessel1 = besselj(mi+mj,red);
@@ -1416,10 +1497,11 @@ classdef phaseStats
                             cum_ip = cum_ip + ...
                                 sqrt(zern.n(ip)+1).*...
                                 (-1).^((zern.n(ip)-zern.m(ip))/2).*...
-                                %{
+                                besselj(zern.n(ip)+1,pi.*tel.D.*f);
+                            %{
                                 zernike.fun(zern.j(ip),zern.n(ip),zern.m(ip),rr,oo).*...
                                 %}
-                                besselj(zern.n(ip)+1,pi.*tel.D.*f);
+
                         end
                     end
                     cum_ip = cum_ip./(pi.*f.*tel.R);
@@ -1433,11 +1515,11 @@ classdef phaseStats
                     cum_i = cum_i + ...
                         sqrt(zern.n(i)+1).*...
                         (-1).^((zern.n(i)-zern.m(i))/2).*...
+                        besselj(zern.n(i)+1,pi.*tel.D.*f).*...
+                        2.*cum_ip./tel.R;
                         %{
                         zernike.fun(zern.j(i),zern.n(i),zern.m(i),rr,oo).*...
                         %}
-                        besselj(zern.n(i)+1,pi.*tel.D.*f).*...
-                        2.*cum_ip./tel.R;
                 end
 %                 out = phaseStats.spectrum(f,atm).*(2.*pi.*f + cum_i);
                 out = phaseStats.spectrum(f,atm).*(cum_i);
@@ -1635,7 +1717,7 @@ classdef phaseStats
                     nLayer,altitude,fr0,...
                     L0,cst_xy)
                     
-                    fprintf(' -->> Auto-correlation meta-matrix!\n')
+                    fprintf(' -->> Auto-correlation meta-matrix!!!!\n')
                     
                     kGs = reshape( triu( reshape(1:nGs^2,nGs,nGs) , 1) , 1, []);
                     kGs(1) = 1;

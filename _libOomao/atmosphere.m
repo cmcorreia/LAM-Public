@@ -8,12 +8,12 @@ classdef atmosphere < hgsetget
     % wavelength, the Fried parameter r0 and the outer scale L0
     %
     % atm =
-    % atmosphere(wavelength,r0,'altitude',altitude,'fractionnalR0',fractionnalR
+    % atmosphere(wavelength,r0,'altitude',altitude,'fractionnalR0',fractionalR
     % 0) creates an atmosphere object from the wavelength, the Fried parameter
     % r0, and from the altitudes and the fractionnalR0 of the turbulence layers
     %
     % atm =
-    % atmosphere(wavelength,r0,'altitude',altitude,'fractionnalR0',fractionnalR
+    % atmosphere(wavelength,r0,'altitude',altitude,'fractionnalR0',fractionalR
     % 0,'windSpeed',windSpeed,'windDirection',windDirection) creates an
     % atmosphere object from the wavelength, the Fried parameter r0, and from
     % the altitudes, the fractionnalR0, the wind speeds and the wind directions
@@ -31,6 +31,11 @@ classdef atmosphere < hgsetget
     % atmosphere object from the wavelength, the Fried parameter r0, the outer
     % scale L0 and from the altitudes, the fractionnalR0, the wind speeds and
     % the wind directions of the turbulence layers
+    %
+    % atm = 
+    % atmosphere(...,'zenithAngle',zenithAngleinRad) streches the altitudes
+    % by 1/cos(zenithAngleInRad). The telescope field 'elevation' should be
+    % set also to zenithAngleInRad
     %
     % Example:
     %     atm = atmosphere(photometry.V,0.15,30,...
@@ -54,6 +59,10 @@ classdef atmosphere < hgsetget
         L0;
         % number of turbulence layers
         nLayer;
+        % altitudes at zenith (before stretch factor is applied) 
+        altitudeAtZenith
+        % zenith angle in radians
+        zenithAngle
         % turbulence layer object array
         layer;
         % atmosphere tag
@@ -128,6 +137,7 @@ classdef atmosphere < hgsetget
             p.addParameter('windDirection', [], @isnumeric);
             p.addParameter('logging', true, @islogical);
             p.addParameter('randStream', [], @(x) isempty(x) || isa(x,'RandStream') );
+            p.addParameter('zenithAngle',0, @isnumeric);
             p.parse(lambda,r0, varargin{:});
             if isa(p.Results.wavelength,'photometry')
                 obj.p_wavelength = p.Results.wavelength.wavelength;
@@ -137,6 +147,12 @@ classdef atmosphere < hgsetget
             obj.r0 = p.Results.r0;
             obj.L0 = p.Results.L0;
             obj.nLayer = length(p.Results.altitude);
+            obj.zenithAngle = p.Results.zenithAngle;
+            % altitudes at zenith
+            obj.altitudeAtZenith = p.Results.altitude;
+            % factor in the elevation
+            strechedAltitude = obj.altitudeAtZenith/cos(obj.zenithAngle);
+            
             if length(p.Results.layeredL0) == 1 || any(isempty(p.Results.layeredL0))
                 layeredL0 = obj.L0*ones(1,obj.nLayer);
             else
@@ -144,12 +160,12 @@ classdef atmosphere < hgsetget
             end
             if any(isempty(p.Results.windSpeed))
                 obj.layer = turbulenceLayer(...
-                    p.Results.altitude,...
+                    strechedAltitude,...
                     p.Results.fractionnalR0,...
                     layeredL0);
             else
                 obj.layer = turbulenceLayer(...
-                    p.Results.altitude,...
+                    strechedAltitude,...
                     p.Results.fractionnalR0,...
                     layeredL0,...
                     p.Results.windSpeed,...
@@ -157,7 +173,7 @@ classdef atmosphere < hgsetget
             end
             if p.Results.logging
                 obj.p_log = logBook.checkIn(obj);
-                display(obj);
+                %display(obj);
             end
             if isempty(p.Results.randStream)
                 obj.rngStream = RandStream('mt19937ar');
@@ -230,13 +246,33 @@ classdef atmosphere < hgsetget
             fprintf('----------------------------------------------------\n')
             
         end
+        %% set L0
+        function set.L0(obj,val)
+        obj.L0 = val;
+        % update the L0 across all the layers
+        setLayeredL0(obj,val);
+        end
+        %% Set layered L0 property
+        function setLayeredL0(obj,val)
+            if length(val) == 1
+                for kLayer = 1:obj.nLayer
+                    obj.layer(kLayer).layeredL0 = val;
+                end
+            elseif length(val) == obj.nLayer
+                for kLayer = 1:obj.nLayer
+                    obj.layer(kLayer).layeredL0 = val(kLayer);
+                end
+            else
+                disp('VALUE INTRODUCED NOT CORRECT')
+            end
+        end
         
         %% Set/Get wavelength property
         function val = get.wavelength(obj)
             val = obj.p_wavelength;
         end
         function set.wavelength(obj,val)
-            if isa(val,'photometry')
+            if isa(val,'photometry') || isa(val,'photometry_kasp')
                 val = val.wavelength;
             end
             obj.wavelengthScale = obj.wavelength/val;

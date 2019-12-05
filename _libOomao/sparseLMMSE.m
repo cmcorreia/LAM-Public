@@ -91,6 +91,12 @@ classdef sparseLMMSE < handle
         tMulti
         maskAmplitudeWighted;
         
+        % flag for computing the rotation matrix
+        rotatedFrame;
+        % rotator: Matrix that rotates the slopes from the original x-y
+        % referential to a x'-y' per sub-aperture (depends on the LLT)
+        rotationMatrix;
+        
         % discrete gradient operator (for the SH WFS)
         Gamma;
         GammaT;
@@ -171,7 +177,8 @@ classdef sparseLMMSE < handle
             inputs.addOptional('phaseCovariance','L2',@ischar);
             inputs.addOptional('outputWavefrontMask',[],@isnumeric);
             inputs.addOptional('layerEstimation', false, @islogical);
-
+            inputs.addOptional('rotatedFrame', false, @islogical );
+            
             inputs.parse(wfs,tel,atmModel,guideStar,varargin{:});
 
             obj.nSub          = inputs.Results.wfs.lenslets.nLenslet;
@@ -191,7 +198,8 @@ classdef sparseLMMSE < handle
             obj.maskAmplitudeWighted = inputs.Results.maskAmplitudeWighted;
             obj.phaseCovariance = inputs.Results.phaseCovariance;
             obj.solver        = inputs.Results.solver;
-            obj.layerEstimation        = inputs.Results.layerEstimation;
+            obj.layerEstimation= inputs.Results.layerEstimation;
+            obj.rotatedFrame  = inputs.Results.rotatedFrame;
             
             if obj.tMulti(1) ~= 0
                 obj.tMulti(1) = [0; obj.tMulti];
@@ -225,6 +233,11 @@ classdef sparseLMMSE < handle
             
             %Compute individual compouds
             defineAtmGrid(obj);
+            if inputs.Results.rotatedFrame
+                setRotationMatrix(obj);
+            else
+                obj.rotationMatrix = [];
+            end
             setGamma(obj);
             setH(obj);
             setHss(obj);
@@ -299,6 +312,28 @@ classdef sparseLMMSE < handle
             obj.phaseMask = gridMask;
         end
         
+        %% set a rotation matrix
+        function setRotationMatrix(obj)
+            rTheta = cell(obj.nGuideStar,1);
+            for kGs = 1:obj.nGuideStar
+                xL = obj.guideStar(kGs).viewPoint(1);
+                yL = obj.guideStar(kGs).viewPoint(2);
+                d = obj.D/obj.wfs.lenslets.nLenslet;
+                uLenslet = linspace(-1,1,obj.wfs.lenslets.nLenslet)*(obj.D/2-d/2);
+                [xLenslet,yLenslet] = meshgrid(uLenslet);
+                maskLenslet = obj.wfs.validLenslet;
+                xLenslet = xLenslet(maskLenslet);
+                yLenslet = yLenslet(maskLenslet);
+                
+                [oe,~] = cart2pol(xLenslet-xL,yLenslet-yL);
+                
+                rTheta{kGs} = [diag(cos(oe)) diag(sin(oe)); -diag(sin(oe)) diag(cos(oe)) ];
+                %rTheta{kGs} = rTheta{kGs}
+            end
+            obj.rotationMatrix = blkdiag(rTheta{:});
+        end
+        
+        
         %% set the sparse gradient matrix using a 3x3 stencil
         function setGamma(obj)
             [p_Gamma,phaseMask3x3] = sparseGradientMatrix3x3Stentil(obj.wfs);
@@ -310,13 +345,23 @@ classdef sparseLMMSE < handle
             obj.Gamma = cell(obj.nGuideStar,1);
             vL = repmat(obj.wfs.validLenslet(:),2,1);
             for kGs = 1:obj.nGuideStar
+                if ~isempty(obj.rotationMatrix)
+                    obj.Gamma{kGs} = p_Gamma(:,...
+                    obj.phaseMask(phaseMask3x3(:),kGs));
+                else
                 obj.Gamma{kGs} = p_Gamma(obj.slopesMask(vL,kGs),...
                     obj.phaseMask(phaseMask3x3(:),kGs));
+                end
             end
             obj.Gamma = blkdiag(obj.Gamma{:});
+            % Model the rotated slopes
+            if ~isempty(obj.rotationMatrix)
+                obj.Gamma = obj.rotationMatrix*obj.Gamma;
+                obj.Gamma = obj.Gamma(obj.slopesMask(obj.slopesMask(:)),:);
+            end
             obj.GammaT = obj.Gamma';
         end
-        
+
         %% set propagator H from GS to WFS
         function setH(obj)
             [x,y] = meshgrid(linspace(-.5,.5,2*obj.nSub+1)*obj.D);
@@ -818,10 +863,26 @@ classdef sparseLMMSE < handle
                 'windSpeed',windSpeed,'windDirection',windDirection);
             tel = tel + atm;
             
-            % Tompraphic Reconstructor
+            % Tomoraphic Reconstructor
             mmse =sparseLMMSE(wfs,tel,atm,ast,'mmseStar',science,...
                 'iNoiseVar', 1/1e-14);
             %R = mmse.getReconstructionMatrix; % MVM case
+
+%             % MMSE with explicit noise covariance matrix
+%             iNoiseCovMat = ...
+%                 wfs.theoreticalNoise(tel, atm, ast, ngs,'naParam',repmat([10000,90000],3,1),'lgsLaunchCoord',zeros(3,2),...
+%                 'computeInverseCovMat',true);
+%             mmse =sparseLMMSE(wfs,tel,atm,ast,'mmseStar',science,...
+%                 'iNoiseVar', blkdiag(iNoiseCovMat{:}));
+% 
+%             
+%             % MMSE with rotated slopes and explicit noise covariance matrix
+%             iNoiseCovMat = ...
+%                 wfs.theoreticalNoise(tel, atm, ast, ngs,'naParam',repmat([10000,90000],3,1),'lgsLaunchCoord',zeros(3,2),...
+%                 'rotatedFrame',true,'computeInverseCovMat',true);
+%                 
+%             mmse =sparseLMMSE(wfs,tel,atm,ast,'mmseStar',science,...
+%                 'iNoiseVar', blkdiag(iNoiseCovMat{:}),'rotatedFrame',true);
             
             % Science camera
             cam = imager;

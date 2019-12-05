@@ -1,2 +1,2 @@
-classdef tools < utilities
+classdef tools < utilities & lamTools & psfrTools
 end

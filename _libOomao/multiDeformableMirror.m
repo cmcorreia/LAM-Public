@@ -99,7 +99,7 @@ classdef multiDeformableMirror < handle
             obj.log = logBook.checkIn(obj);
         end
         %
-        %         %% Destructor
+        %% Destructor
         function delete(obj)
             %             if isa(obj.modes,'influenceFunction')
             %                 delete(obj.modes)

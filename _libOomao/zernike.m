@@ -94,14 +94,14 @@ classdef zernike < telescopeAbstract
             p = inputParser;
             p.addRequired('j', @isnumeric);
             p.addOptional('D', 2, @isnumeric);
-            p.addParamValue('obstructionRatio', 0, @isnumeric);
-            p.addParamValue('resolution', [], @isnumeric);
-            p.addParamValue('radius', [], @isnumeric);
-            p.addParamValue('angle', [], @isnumeric);
-            p.addParamValue('pupil', [], @(x) isnumeric(x) || islogical(x));
-            p.addParamValue('fieldOfViewInArcmin', [], @isnumeric);
-            p.addParamValue('unitNorm', false, @islogical);
-            p.addParamValue('logging', true, @islogical);
+            p.addParameter('obstructionRatio', 0, @isnumeric);
+            p.addParameter('resolution', [], @isnumeric);
+            p.addParameter('radius', [], @isnumeric);
+            p.addParameter('angle', [], @isnumeric);
+            p.addParameter('pupil', [], @(x) isnumeric(x) || islogical(x));
+            p.addParameter('fieldOfViewInArcmin', [], @isnumeric);
+            p.addParameter('unitNorm', false, @islogical);
+            p.addParameter('logging', true, @islogical);
             p.parse(j,varargin{:});
             obj = obj@telescopeAbstract(p.Results.D,...
                 'obstructionRatio',p.Results.obstructionRatio,...
@@ -278,13 +278,14 @@ classdef zernike < telescopeAbstract
                 obj = obj - 1;
             else
                 if isa(val,'source')
-%                     nVal = length(val);
-%                     phaseMap = zeros(length(val(1).phase(:)),nVal);
-%                     for kVal=1:nVal
-%                         phaseMap(:,kVal) = val(kVal).phase(:)/val(kVal).waveNumber;
-%                     end
-                    phaseMap = utilities.toggleFrame(val.phase,2)/val.waveNumber;
-                    p = obj.pupilLogical & val.mask;                    
+                    nVal = length(val);
+                    phaseMap = zeros(length(val(1).phase(:)),nVal);
+                    for kVal=1:nVal
+                        phaseMap(:,kVal) = val(kVal).phase(:)/val(kVal).waveNumber;
+                    end
+%                    phaseMap = utilities.toggleFrame([val.phase],2)/val.waveNumber;
+                    %phaseMap = utilities.toggleFrame(val.phase,2)/val.waveNumber;
+                    p = obj.pupilLogical & val(1).mask;                    
                 else
                     phaseMap = tools.toggleFrame(tools.toggleFrame(val,3),2);
                     p = obj.pupilLogical;
@@ -478,6 +479,9 @@ classdef zernike < telescopeAbstract
         %% get Zernike x derivative
         function out = get.xDerivative(obj)
             out = obj.p_p*obj.xDerivativeMatrix;
+            if obj.j(1) == 2 % tilt mode
+                out(:,1) = 2;
+            end
             if ~obj.lex
                 out = utilities.toggleFrame(out,3);
             end
@@ -486,6 +490,9 @@ classdef zernike < telescopeAbstract
         %% get Zernike y derivative
         function out = get.yDerivative(obj)
             out = obj.p_p*obj.yDerivativeMatrix;
+            if obj.j(2) == 3 % tilt mode
+                out(:,2) = 2;
+            end
             if ~obj.lex
                 out = utilities.toggleFrame(out,3);
             end

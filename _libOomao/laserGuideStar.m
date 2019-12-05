@@ -16,9 +16,9 @@ classdef laserGuideStar < source
     % lgs = laserGuideStar(25/60,25,90e3,1,1e6,ones(1,11),...
     %        'wavelength',photometry.Na,...
     %        'height',1e3*((-5:5)+90),...
-    %        'viewPoint',[-25/2,0]
+    %        'viewPoint',[-25/2,0])
     % The number of photon is 1e6 and the Na density profile is flat.
-    % The telescope pupil needs to be sampled with at leat 60*44 pixels
+    % The telescope pupil needs to be sampled with at least 60*44 pixels
     %
     % See also: source
     
@@ -42,6 +42,9 @@ methods
             fprintf(' LGS aperture image FWHM: %5.3farcsec\n',apertureImageFwhm.ARCSEC)
             
             pixelWidth = ceil( 2*width/apertureImageFwhm );
+            if pixelWidth == 0 && ~isempty(fwhm)
+                pixelWidth = 2*max(pixelWidth, fwhm)/apertureImageFwhm;
+            end
             fprintf(' LGS size in pixel: %d\n',pixelWidth);
             
             if ~isempty(fwhm)
@@ -54,9 +57,11 @@ methods
             
             lgsHeight2 = [obj(1,1,:).height].^2;
             if isempty(naDensityProfile)
-                set(obj,'nPhoton',nPhoton./sum(1./lgsHeight2));
+                %set(obj,'nPhoton',nPhoton./sum(1./lgsHeight2));
+                set(obj,'nPhoton',nPhoton);
             else
-                nrm = sum(naDensityProfile./lgsHeight2);
+                %nrm = sum(naDensityProfile./lgsHeight2);
+                nrm = sum(naDensityProfile);
                 for k=1:length(naDensityProfile)
                     set(obj(1,:,k),'nPhoton',nPhoton.*naDensityProfile(k)./nrm);
                 end

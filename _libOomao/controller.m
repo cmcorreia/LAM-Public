@@ -55,6 +55,7 @@ classdef controller < handle
         gain;
         % controller temporal steps
         nIteration;
+        nSrc;
         kIteration=0;
         % calibration matrix D and SVD
         D;
@@ -72,7 +73,7 @@ classdef controller < handle
     methods
        
         %% Constructor
-        function obj = controller(sensor,compensator,commandMatrix,nIteration,varargin)
+        function obj = controller(sensor,compensator,nIteration,varargin)
             
             % Parsing input parameters
             p = inputParser;
@@ -81,6 +82,7 @@ classdef controller < handle
             p.addRequired('nIteration', @isnumeric );
             p.addOptional('commandMatrix', [] ,@isnumeric );
             p.addParamValue('nSensor', 1, @isnumeric );
+            p.addParamValue('nSrc', 1, @isnumeric );
             p.addParamValue('nTipTiltSensor', 1, @isnumeric );
             p.addParamValue('nCompensator', 1, @isnumeric );
             p.addParamValue('type', 'closedLoop', @ischar );
@@ -90,14 +92,13 @@ classdef controller < handle
             p.addParamValue('tipTiltCompensator', [] , @(x) isa(x,'deformableMirror') );
             p.addParamValue('tipTiltCommandMatrix', [] , @isnumeric );
             p.addParamValue('tipTiltDelay', 0 , @isnumeric );
-            p.parse(sensor,compensator,commandMatrix,nIteration,varargin{:});
+            p.parse(sensor,compensator,nIteration,varargin{:});
             
             % Allocating properties
             obj.sensor        = p.Results.sensor;
             obj.tipTiltSensor = p.Results.tipTiltSensor;
             obj.nSensor       = p.Results.nSensor;
-            obj.nTipTiltSensor ...
-                              = p.Results.nTipTiltSensor;
+            obj.nTipTiltSensor=  p.Results.nTipTiltSensor;
             obj.compensator   = p.Results.compensator;
             obj.tipTiltCompensator ...
                               = p.Results.tipTiltCompensator;
@@ -110,9 +111,9 @@ classdef controller < handle
             obj.gain          = p.Results.gain;
             obj.tipTiltDelay  = p.Results.tipTiltDelay;
             
-            nSrc = 1;
-            obj.inputVar        = zeros(obj.nIteration,nSrc);
-            obj.outputVar       = zeros(obj.nIteration,nSrc);
+            obj.nSrc            = p.Results.nSrc;
+            obj.inputVar        = zeros(obj.nIteration,obj.nSrc);
+            obj.outputVar       = zeros(obj.nIteration,obj.nSrc);
             obj.sensorData      = zeros(obj.sensor.nSlope,obj.nSensor,obj.nIteration+obj.delay+1);
             obj.compensatorData = zeros(obj.compensator.nValidActuator,obj.nIteration+obj.delay+1);
             obj.tipTiltSensorData      = zeros(2,obj.nTipTiltSensor,obj.nIteration+obj.delay+1);

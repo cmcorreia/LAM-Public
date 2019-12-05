@@ -115,7 +115,7 @@ classdef source < stochasticWave & hgsetget
             p.addParamValue('zenithInArcmin',[],@isnumeric);
             p.addParamValue('azimuth',0,@isnumeric);
             p.addParamValue('height',Inf,@isnumeric);
-            p.addParamValue('wavelength',photometry.V,@(x) isa(x,'photometry'));
+            p.addParamValue('wavelength',photometry.V,@(x) isa(x,'photometry') | isa(x,'photometry_kasp'));
             p.addParamValue('magnitude',0,@isnumeric); % Vega magnitude (default)
 %             p.addParamValue('nPhoton',[],@isnumeric);
             p.addParamValue('width',0,@isnumeric);
@@ -282,7 +282,7 @@ classdef source < stochasticWave & hgsetget
             out = obj.photometry;
         end
         function set.wavelength(obj,val)
-            if ~isa(val,'photometry')
+            if ~isa(val,'photometry') && ~isa(val,'photometry_kasp')
                 error('oomao:source:wavelength','The wavelength must be set with the photometry class!')
             end
             obj.photometry = val;

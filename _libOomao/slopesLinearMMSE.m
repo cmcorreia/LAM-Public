@@ -600,9 +600,10 @@ classdef slopesLinearMMSE < handle
                             mtimesFast(obj.Cox{ks}{kl}{kg}{1},fU{kl}(:,2*kg-1))...
                             + mtimesFast(obj.Cox{ks}{kl}{kg}{2},fU{kl}(:,2*kg));
                     end
-                    out{kl} = ifft(out{kl});
-                    out{kl} = out{kl}(xi,:);
-                end
+                    
+                end % CC change 27/04/2018 cropping to output size done outside the nSci and nGs loops
+                out{kl} = ifft(out{kl});
+                out{kl} = out{kl}(xi,:);
             end
 
             % interpolation 

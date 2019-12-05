@@ -4,3 +4,4 @@ if ischar(val)
 end
 radian = val*constants.arcmin2radian;
 end
+%test

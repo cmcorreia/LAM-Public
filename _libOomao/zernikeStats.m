@@ -35,13 +35,14 @@ classdef zernikeStats
                 atmSlab = slab(atm,kLayer);
                 [vx,vy] = pol2cart(atmSlab.layer.windDirection,atmSlab.layer.windSpeed);
                 for k=1:numel(nu)
-                    if vx>eps(atmSlab.layer.windSpeed)
-                        out(k) = out(k) + quadgk( @integrandFy , -Inf, Inf);
+                    if abs(vx)>eps(atmSlab.layer.windSpeed)
+                        out(k) = out(k) + abs(quadgk( @integrandFy , -Inf, Inf));
                     else
-                        out(k) = out(k) + quadgk( @integrandFx , -Inf, Inf);
+                        out(k) = out(k) + abs(quadgk( @integrandFx , -Inf, Inf));
                     end
                 end
             end
+            out = out*2; % double-sided spectrum
             
             function int = integrandFy(fy)
                 fx = (nu(k) -fy*vy)/vx;
